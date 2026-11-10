@@ -308,6 +308,7 @@
                 if (toInt(vs.pixelCount, 0) !== toInt(l.vs.pixelCount, 0)) parts.push(l.vs.pixelCount + ' \u2192 ' + vs.pixelCount + ' px');
             }
             seenLive[vs._live.key] = true;
+            if (off === 0 && vs._live.key !== r.key) parts.push('moved up from ' + rowLabel(l));
             if (String(vs.colorOrder) !== String(l.vs.colorOrder)) parts.push(l.vs.colorOrder + ' \u2192 ' + vs.colorOrder);
             if (off === 0 && String(vs.description || '') !== String(l.vs.description || '')) parts.push('renamed to "' + (vs.description || '') + '"');
             if (off === 0 && parts.length === 0 && toInt(vs.startChannel, 0) !== toInt(l.vs.startChannel, 0)) parts.push('start channel ' + (toInt(l.vs.startChannel, 0) + 1) + ' \u2192 ' + (toInt(vs.startChannel, 0) + 1));
@@ -398,22 +399,22 @@
     }
 
     /*
-     * Delete a subport (B, C, ...). FPP numbers subports by position (the receiver count), so only the LAST
-     * one can be removed; its strings are dropped and the receiver count goes down by one.
+     * Delete any subport. FPP numbers subports by position (the receiver count), so the ones after it move up
+     * (C becomes B) and the receiver count goes down by one. A port's only subport cannot be deleted.
      * Smart v1 stores the count itself (1..3), smart v2 stores count + 3.
      */
     function removeSubport(draft, co, port, sub) {
         var p = draft && draft[co] && draft[co].outputs && draft[co].outputs[port];
         if (!p) return { ok: false, error: 'That port does not exist.' };
         var n = subportCount(p);
-        if (sub < 1) return { ok: false, error: 'Subport A is the port itself and cannot be deleted. Remove its strings instead.' };
-        if (sub >= n) return { ok: false, error: 'That subport does not exist.' };
-        if (sub !== n - 1) return { ok: false, error: 'Only the last subport can be deleted, because FPP numbers them by position. Delete ' + SUB_LETTERS[n - 1] + ' first.' };
+        if (n < 2) return { ok: false, error: 'This port has only one subport, which is the port itself. Remove its strings instead.' };
+        if (sub < 0 || sub >= n) return { ok: false, error: 'That subport does not exist.' };
         var dt = toInt(p.differentialType, 0), removed = 0;
         (Array.isArray(p[SUB_KEYS[sub]]) ? p[SUB_KEYS[sub]] : []).forEach(function (v) { if (v && toInt(v.pixelCount, 0) > 0) removed++; });
-        delete p[SUB_KEYS[sub]];
+        for (var i = sub; i < n - 1; i++) p[SUB_KEYS[i]] = Array.isArray(p[SUB_KEYS[i + 1]]) ? p[SUB_KEYS[i + 1]] : [];
+        delete p[SUB_KEYS[n - 1]];
         p.differentialType = dt - 1;
-        return { ok: true, removed: removed };
+        return { ok: true, removed: removed, moved: n - 1 - sub };
     }
 
     function findByUid(draft, uid) {

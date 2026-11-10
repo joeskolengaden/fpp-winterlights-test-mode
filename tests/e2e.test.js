@@ -378,8 +378,8 @@ test('add a string, split a string, discard, then apply a split and test the new
 
 test('delete a subport: staged, shown in the changes list, written on apply', async () => {
     await tab('ports');
-    assert.equal(await page.locator('#wltm [data-act="del-sub"]').count(), 1, 'only the last subport of a port offers Delete');
-    assert.equal(await page.locator('#wltm tr:has-text("Window 1") [data-act="del-sub"]').count(), 0, 'subport A cannot be deleted');
+    assert.equal(await page.locator('#wltm [data-act="del-sub"]').count(), 2, 'every subport of a port with subports offers Delete');
+    assert.equal(await page.locator('#wltm tr:has-text("Roof right") [data-act="del-sub"]').count(), 0, 'a port without subports has none');
     await selectRow('Window 2');
     await act('light');
     assert.deepEqual(litKeys(), ['0:2:1']);
@@ -391,7 +391,6 @@ test('delete a subport: staged, shown in the changes list, written on apply', as
     assert.match(foot, /Port 3B: deleted \(20 px, Window 2\)/);
     assert.match(foot, /Port 3: subports 2 → 1/);
     assert.equal(JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs[2].differentialType, 2, 'FPP untouched until Apply');
-    // discard brings it back, apply writes it
     await act('discard');
     assert.match(await text('#wltm .wltm-table'), /Window 2/);
     await page.click('#wltm tr:has-text("Window 2") [data-act="del-sub"]');
@@ -407,6 +406,53 @@ test('delete a subport: staged, shown in the changes list, written on apply', as
     assert.equal(fs.readdirSync(path.join(dataDir(), 'backups')).length, nb + 1);
     assert.match(await text('#wltm .wltm-foot'), /Nothing waiting/);
     assert.equal(await page.locator('#wltm [data-act="del-sub"]').count(), 0, 'with one subport left there is nothing to delete');
+});
+
+test('delete the first of three subports: the others move up and stay testable', async () => {
+    // give port 5 three subports on the stand-in controller, then reload the page
+    const f = JSON.parse(fs.readFileSync(cfgFile(), 'utf8'));
+    const p5 = f.channelOutputs[0].outputs[4];
+    p5.differentialType = 3;
+    p5.virtualStrings = [vs({ description: 'Eave A', startChannel: 600, pixelCount: 10 })];
+    p5.virtualStringsB = [vs({ description: 'Eave B', startChannel: 630, pixelCount: 12 })];
+    p5.virtualStringsC = [vs({ description: 'Eave C', startChannel: 700, pixelCount: 8 })];
+    fs.writeFileSync(cfgFile(), JSON.stringify(f, null, 2));
+    await page.reload(); await page.waitForSelector('#wltm .wltm-table'); await settle();
+    assert.match(await text('#wltm .wltm-table'), /5\s+A\s+Eave A[\s\S]*5\s+B\s+Eave B[\s\S]*5\s+C\s+Eave C/);
+    await page.click('#wltm tr:has-text("Eave A") [data-act="del-sub"]');
+    await settle();
+    const t = await text('#wltm .wltm-table');
+    assert.match(t, /5\s+A\s+Eave B[\s\S]*5\s+B\s+Eave C/);
+    assert.doesNotMatch(t, /Eave A/);
+    const foot = await text('#wltm .wltm-foot');
+    assert.match(foot, /Port 5A: moved up from Port 5B/);
+    assert.match(foot, /Port 5B: moved up from Port 5C/);
+    assert.match(foot, /Port 5: subports 3 → 2/);
+    // Eave C (now B) is still lit on the channels it really occupies until Apply
+    await selectRow('Eave C');
+    await act('light');
+    const on = sim().lit();
+    assert.deepEqual([on[0], on[on.length - 1]], [701, 724]);
+    await act('all-off');
+    await act('apply');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    const q = JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs[4];
+    assert.equal(q.differentialType, 2);
+    assert.equal(q.virtualStrings[0].description, 'Eave B');
+    assert.equal(q.virtualStringsB[0].description, 'Eave C');
+    assert.ok(!('virtualStringsC' in q));
+    // after Apply the moved string is tested at its new place
+    await selectRow('Eave C');
+    await act('light');
+    const on2 = sim().lit();
+    assert.deepEqual([on2[0], on2[on2.length - 1]], [701, 724]);
+    await act('all-off');
+    // put the fixture back for the tests that follow
+    const g = JSON.parse(fs.readFileSync(cfgFile(), 'utf8'));
+    g.channelOutputs[0].outputs[4] = fixture().channelOutputs[0].outputs[4];
+    fs.writeFileSync(cfgFile(), JSON.stringify(g, null, 2));
+    await page.reload(); await page.waitForSelector('#wltm .wltm-table'); await settle();
 });
 
 test('a change made outside the page is never overwritten', async () => {

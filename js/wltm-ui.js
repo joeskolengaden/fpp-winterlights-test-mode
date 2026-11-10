@@ -447,13 +447,14 @@
         var name = 'Port ' + (C.toInt(p.portNumber, port) + 1) + C.SUB_LETTERS[sub];
         var n = 0;
         draftRows().forEach(function (r) { if (r.co === co && r.port === port && r.sub === sub && !r.empty) n++; });
-        if (!window.confirm('Delete subport ' + name + (n ? ' and its ' + n + ' string' + (n === 1 ? '' : 's') : '') + '?\n\nNothing changes in FPP until you press "Apply to FPP". The change can be discarded before then.')) return;
+        var later = C.subportCount(p) - 1 - sub;
+        if (!window.confirm('Delete subport ' + name + (n ? ' and its ' + n + ' string' + (n === 1 ? '' : 's') : '') + '?' + (later ? '\n\nThe ' + later + ' subport' + (later === 1 ? '' : 's') + ' after it move up one place (' + C.SUB_LETTERS[sub + 1] + ' becomes ' + C.SUB_LETTERS[sub] + ').' : '') + '\n\nNothing changes in FPP until you press "Apply to FPP". The change can be discarded before then.')) return;
         allOff();
         var res = C.removeSubport(S.record.draft, co, port, sub);
         if (!res.ok) { toast(res.error, true); return; }
         S.edit = null; S.add = null;
         saveRecord();
-        toast(name + ' deleted. It leaves FPP after "Apply to FPP".');
+        toast(name + ' deleted' + (res.moved ? ', the later subports moved up' : '') + '. FPP changes after "Apply to FPP".');
         render();
     }
 
@@ -647,7 +648,7 @@
                 h += '<td class="wltm-mono">' + (C.toInt(r.vs.startChannel, 0) + 1) + '</td><td>' + px + '</td><td>' + (m.counted ? esc(m.counted) : '<span class="wltm-muted">–</span>') + '</td><td>' + orderCell(r, l) + '</td><td>' + pill(st.cls, st.text) + '</td>';
             }
             h += '<td class="wltm-nowrap">' + btn('add-open', '+', 'sm', ' data-co="' + r.co + '" data-port="' + r.port + '" data-sub="' + r.sub + '" title="Add a string to ' + esc(C.rowLabel(r)) + '"');
-            if (r.sub >= 1 && r.sub === C.subportCount(S.record.draft[r.co].outputs[r.port]) - 1 && isFirstOfList(r)) h += ' ' + btn('del-sub', '\ud83d\uddd1', 'sm', ' data-co="' + r.co + '" data-port="' + r.port + '" data-sub="' + r.sub + '" title="Delete subport ' + esc(r.subLetter) + ' of port ' + r.portNumber + '"');
+            if (r.hasSubs && isFirstOfList(r)) h += ' ' + btn('del-sub', '\ud83d\uddd1', 'sm', ' data-co="' + r.co + '" data-port="' + r.port + '" data-sub="' + r.sub + '" title="Delete subport ' + esc(r.subLetter) + ' of port ' + r.portNumber + '"');
             if (uid && !r.vs._live) h += ' ' + btn('remove-new', '✕', 'sm', ' data-uid="' + esc(uid) + '" title="Remove this new string"');
             h += '</td></tr>';
             if (S.add && S.add.co === r.co && S.add.port === r.port && S.add.sub === r.sub && isLastOfList(r)) h += addForm(r);

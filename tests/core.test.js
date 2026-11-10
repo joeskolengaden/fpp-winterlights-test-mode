@@ -316,31 +316,50 @@ test('countLimit: whole live string, or up to the next split part', () => {
     assert.equal(C.countLimit(draft, { pixelCount: 5, _live: null }, lidx), 0);
 });
 
-test('removeSubport: last subport only, receiver count goes down, diff reports it', () => {
+test('removeSubport: any subport, later ones move up, receiver count goes down, diff reports it', () => {
     const live = cfg();
-    live[0].outputs[2].differentialType = 5;                          // smart v2, two receivers: A and B ... plus
-    live[0].outputs[2].virtualStringsC = [vs({ description: 'Win C', startChannel: 500, pixelCount: 9 })];
+    live[0].outputs[2].virtualStringsC = [vs({ description: 'Win C', startChannel: 500, pixelCount: 9 }), vs({ description: 'Win C2', startChannel: 600, pixelCount: 4 })];
     live[0].outputs[2].differentialType = 6;                          // smart v2, three receivers
-    const draft = C.makeDraft(live);
-    assert.equal(C.subportCount(draft[0].outputs[2]), 3);
-    assert.equal(C.removeSubport(draft, 0, 2, 0).ok, false, 'A is the port itself');
-    assert.equal(C.removeSubport(draft, 0, 2, 1).ok, false, 'B is not the last subport');
-    assert.equal(C.removeSubport(draft, 0, 2, 3).ok, false);
-    const r = C.removeSubport(draft, 0, 2, 2);
-    assert.ok(r.ok); assert.equal(r.removed, 1);
+    const base = C.makeDraft(live);
+    assert.equal(C.subportCount(base[0].outputs[2]), 3);
+    const uidC = rowsByLabel(base)['Port 3C'].vs._uid;
+
+    // delete the middle one: C moves up to B
+    let draft = C.clone(base);
+    const r = C.removeSubport(draft, 0, 2, 1);
+    assert.ok(r.ok); assert.equal(r.removed, 1); assert.equal(r.moved, 1);
     assert.equal(draft[0].outputs[2].differentialType, 5);
-    assert.equal(C.subportCount(draft[0].outputs[2]), 2);
     assert.ok(!('virtualStringsC' in draft[0].outputs[2]));
-    assert.deepEqual(C.listRows(draft).filter(x => x.portNumber === 3).map(C.rowLabel), ['Port 3A', 'Port 3B']);
-    const d = C.diffDraft(draft, live).map(x => x.label + ': ' + x.text);
-    assert.deepEqual(d, ['Port 3C: deleted (9 px, Win C)', 'Port 3: subports 3 \u2192 2']);
-    const out = C.stripDraft(draft);
-    assert.equal(out[0].outputs[2].differentialType, 5);
-    // smart v1 stores the count itself
+    const R = rowsByLabel(draft);
+    assert.deepEqual(C.listRows(draft).filter(x => x.portNumber === 3).map(x => C.rowLabel(x) + ':' + (x.vs.description || '')), ['Port 3A:Win A', 'Port 3B:Win C', 'Port 3B:Win C2']);
+    assert.equal(R['Port 3B'].vs._uid, uidC, 'a moved string keeps its identity, so its test results stay with it');
+    assert.deepEqual(C.diffDraft(draft, live).map(x => x.label + ': ' + x.text), [
+        'Port 3B: moved up from Port 3C', 'Port 3B: moved up from Port 3C', 'Port 3B: deleted (10 px, Win B)', 'Port 3: subports 3 \u2192 2']);
+    // everything that was on the lights is still testable at its old place until Apply
+    const lidx = C.liveIndex(live);
+    assert.equal(C.liveOf(R['Port 3B'].vs, lidx).vs.description, 'Win C2', 'the moved string still maps to its own live string');
+    assert.equal(C.liveOf(C.listRows(draft).filter(x => x.vs && x.vs.description === 'Win C')[0].vs, lidx).vs.description, 'Win C');
+    assert.equal(C.stripDraft(draft)[0].outputs[2].virtualStringsB[0].description, 'Win C');
+
+    // delete the first one: B becomes A and C becomes B
+    draft = C.clone(base);
+    assert.ok(C.removeSubport(draft, 0, 2, 0).ok);
+    assert.equal(draft[0].outputs[2].virtualStrings[0].description, 'Win B');
+    assert.equal(draft[0].outputs[2].virtualStringsB[0].description, 'Win C');
+    assert.equal(draft[0].outputs[2].differentialType, 5);
+
+    // delete the last one
+    draft = C.clone(base);
+    assert.ok(C.removeSubport(draft, 0, 2, 2).ok);
+    assert.equal(draft[0].outputs[2].differentialType, 5);
+    assert.deepEqual(C.diffDraft(draft, live).map(x => x.text), ['deleted (9 px, Win C)', 'deleted (4 px, Win C2)', 'subports 3 \u2192 2']);
+
+    // smart v1 stores the count itself; a port's only subport can never be deleted
     const l1 = cfg(); l1[0].outputs[2].differentialType = 2;
     const d1 = C.makeDraft(l1);
     assert.ok(C.removeSubport(d1, 0, 2, 1).ok);
     assert.equal(d1[0].outputs[2].differentialType, 1);
-    assert.equal(C.removeSubport(d1, 0, 2, 1).ok, false);
-    assert.deepEqual(C.diffDraft(d1, l1).map(x => x.text), ['deleted (10 px, Win B)', 'subports 2 \u2192 1']);
+    assert.equal(C.removeSubport(d1, 0, 2, 0).ok, false);
+    assert.equal(C.removeSubport(d1, 0, 0, 0).ok, false, 'a port without subports');
+    assert.equal(C.removeSubport(draft, 0, 2, 9).ok, false);
 });
