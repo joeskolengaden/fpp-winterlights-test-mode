@@ -88,3 +88,14 @@ node --test tests/e2e.test.js      # the whole page in a browser against a stand
 
 The tests do not use real hardware. The model in `tests/fppd-sim.js` follows FPP 5.4's `TestPatternBase.cpp`,
 `RGBFill.cpp` and `PixelString::SetupMap`.
+
+## Running the tests
+
+```bash
+node --test tests/core.test.js                # logic, the "no api.php" rule and a replay of FPP's plugin loader
+node --test tests/e2e.test.js                 # whole page in a browser against a stand-in FPP (needs php + playwright)
+python3 tests/hw/check_fpp.py http://<fpp>    # read-only checks against a real controller (add --light --roundtrip for more)
+```
+
+The browser test needs the checkout folder to be named `fpp-winterlights-test-mode`, because the page derives the plugin name from its folder.
+Set `WLTM_CHROME=/path/to/chrome` to use an installed browser instead of Playwright's. The same tests run on GitHub for every push.

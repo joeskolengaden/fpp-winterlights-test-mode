@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The checkout folder is named after the repo (fpp-winterlights-test-mode); the page derives the plugin name from it.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: PHP syntax
+        run: for f in plugin.php menu.inc wltm-api.php tests/mock-fpp/router.php; do php -l "$f"; done
+      - name: Core tests (logic, no api.php, FPP loader replay)
+        run: node --test tests/core.test.js
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Browser tests against the stand-in FPP
+        run: node --test tests/e2e.test.js
