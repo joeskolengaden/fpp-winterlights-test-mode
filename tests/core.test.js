@@ -376,3 +376,39 @@ test('no plugin file is named api.php (FPP would load it into every API request)
         assert.ok(!/page=api\.php/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' still points at api.php');
     }
 });
+
+// Stronger version of the check above: replay FPP 5.4's addPluginEndpoints() (www/api/index.php) over a plugins
+// folder holding this plugin, exactly as it runs on every /api/ request. If any file FPP would load prints, exits or
+// lacks the getEndpoints function, the real FPP API would break, so the replay must reach its last line.
+test('FPP\'s plugin endpoint loader runs through this plugin untouched', () => {
+    const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
+    const root = path.join(__dirname, '..');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wltm-plugins-'));
+    try {
+        const dir = path.join(base, 'fpp-winterlights-test-mode');
+        fs.mkdirSync(dir);
+        for (const f of fs.readdirSync(root)) {
+            if (f === '.git' || f === 'node_modules' || f === 'tests') continue;
+            fs.cpSync(path.join(root, f), path.join(dir, f), { recursive: true });
+        }
+        const loader = '<?php\n' +
+            '$baseDir = ' + JSON.stringify(base + '/') + ';\n' +
+            '$loaded = 0;\n' +
+            'foreach (scandir($baseDir) as $file) {\n' +
+            '  if (!in_array($file, array(".", "..")) && is_dir($baseDir . $file) && is_file($baseDir . $file . "/api.php")) {\n' +
+            '    require_once $baseDir . $file . "/api.php";\n' +
+            '    $fn = "getEndpoints" . preg_replace("/-/", "", $file);\n' +
+            '    if (!function_exists($fn)) { echo "MISSING " . $fn; exit(1); }\n' +
+            '    $loaded++;\n' +
+            '  }\n' +
+            '}\n' +
+            'echo "LOADER-OK";\n';
+        fs.writeFileSync(path.join(base, 'loader.php'), loader);
+        let out = '';
+        try { out = cp.execFileSync('php', [path.join(base, 'loader.php')], { encoding: 'utf8' }); }
+        catch (e) { out = (e.stdout || '') + (e.stderr || '') || String(e); }
+        assert.equal(out, 'LOADER-OK');
+    } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+    }
+});
