@@ -128,3 +128,10 @@
 .wltm-card-in input[type=text] { box-sizing: border-box; }
 .wltm-tagedit { margin-top: 8px; padding: 8px 10px; border: 1px solid rgba(128,128,128,.35); border-radius: 8px; }
 .wltm-tagrow { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border: 1px solid rgba(128,128,128,.4); border-radius: 14px; font-size: 12px; }
+
+/* colour tab: tick boxes for ports and subports */
+.wltm-pickgrid { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 10px; }
+.wltm-pickport { border: 1px solid rgba(128,128,128,.35); border-radius: 8px; padding: 6px 10px; min-width: 150px; }
+.wltm-portbox, .wltm-picksubs label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.wltm-picksubs { margin: 4px 0 0 22px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.wltm-pickport input[type=checkbox] { width: 16px; height: 16px; }

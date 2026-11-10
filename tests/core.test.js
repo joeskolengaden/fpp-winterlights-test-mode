@@ -497,3 +497,13 @@ test('split parts are lettered A, B, C - never "part 2 part 2"', () => {
     assert.equal(C.descStem('port 9 C'), 'port 9');
     assert.equal(C.descStem('Roof left side'), 'Roof left side');
 });
+
+test('chase: pixel 1 is the pixel nearest the controller, so a reversed string chases down the channels', () => {
+    const v = vs({ startChannel: 0, pixelCount: 10, colorOrder: 'RGB' });
+    assert.deepEqual(C.solidFrame([{ live: v, from: 0, count: 1 }]).ranges, [[1, 3]]);
+    assert.deepEqual(C.solidFrame([{ live: v, from: 9, count: 1 }]).ranges, [[28, 30]]);
+    const r = Object.assign({}, v, { reverse: 1 });
+    assert.deepEqual(C.solidFrame([{ live: r, from: 0, count: 1 }]).ranges, [[28, 30]]);
+    assert.deepEqual(C.solidFrame([{ live: r, from: 9, count: 1 }]).ranges, [[1, 3]]);
+    assert.deepEqual(C.solidFrame([{ live: r, from: 0, count: 3 }]).ranges, [[22, 30]], 'a block of three at the start of a reversed string');
+});

@@ -19,11 +19,11 @@
         enabled: true,                  // master switch: when false nothing can be lit
         fppd: { known: false, running: false, status: '', mode: '' },
         lit: { label: '', note: '' },
-        ident: { colour: 'W' },
+        ident: { colour: 'W', speed: 'normal' },
         count: { pos: {}, started: false, save: '', note: {} },
         tags: null,                     // description tags offered in the Count tab; null = built-in list until loaded
         tagEdit: false,                 // tag editor open
-        colour: { scope: 'all', current: '', choice: {} },
+        colour: { scope: 'all', picked: {}, current: '', choice: {} },   // scope 'all' or 'sel' (tick boxes: picked[uid])
         verify: null,
         edit: null,                     // { key } row being renamed
         add: null,                      // { co, port, sub } add-string form
@@ -205,7 +205,8 @@
         return drv.done;
     }
     var blinkTimer = null;
-    function stopBlink() { if (blinkTimer) { clearInterval(blinkTimer); blinkTimer = null; } }
+    var chaseTok = 0;                    // a running chase carries the token it started with; bumping it stops the chase
+    function stopBlink() { chaseTok++; if (blinkTimer) { clearInterval(blinkTimer); blinkTimer = null; } }
     function allOff() {
         stopBlink();
         S.colour.current = ''; S.verify = null; S.count.started = false;
@@ -240,6 +241,35 @@
             show(frame, label + ' · blinking');
             blinkTimer = setInterval(function () { on = !on; show(frame, label + ' · blinking', on ? 1 : 0); }, 600);
         } else show(frame, label);
+    }
+
+    /* A lit block runs from the first pixel to the last, then starts again after a short dark gap, so the direction the
+       data travels along the string can be seen. It uses the same pixel mapping as counting, so a reversed string shows
+       its real physical direction. The block is wider on long strings so one pass takes a few seconds. */
+    var CHASE_DWELL = { slow: 450, normal: 220, fast: 60 };
+    async function runChase(r) {
+        var p = partOf(r);
+        if (!p) { toast('This string is not in FPP\'s running configuration yet. Use "Apply to FPP" first.', true); return; }
+        stopBlink();
+        S.colour.current = ''; S.verify = null; S.count.started = false;
+        var tok = chaseTok, n = p.count, width = Math.max(1, Math.ceil(n / 40)), pos = 0, label = C.rowLabel(r);
+        var probe = S.ident.colour === 'W' ? C.solidFrame([{ live: p.live, from: p.from, count: 1 }]) : C.colourFrame([{ live: p.live, from: p.from, count: 1 }], S.ident.colour);
+        if (!probe.ranges.length) { toast('This string has no channel for that colour.', true); return; }
+        toast('Chasing ' + label + ' from pixel 1 to ' + n + ' in a loop. Press "Stop test · all off" to end.');
+        while (tok === chaseTok && S.enabled) {
+            var part = { live: p.live, from: p.from + pos, count: Math.min(width, n - pos) };
+            var frame = S.ident.colour === 'W' ? C.solidFrame([part]) : C.colourFrame([part], S.ident.colour);
+            await show(frame, label + ' · chase, pixel ' + (pos + 1) + (width > 1 ? '–' + Math.min(n, pos + width) : '') + ' of ' + n);
+            if (tok !== chaseTok) break;
+            await sleep(CHASE_DWELL[S.ident.speed] || CHASE_DWELL.normal);
+            pos += width;
+            if (pos >= n) {
+                pos = 0;
+                await show(C.emptyFrame(), label + ' · chase restarting');
+                if (tok !== chaseTok) break;
+                await sleep(650);
+            }
+        }
     }
 
     function identifyAll() {
@@ -334,13 +364,67 @@
         render();
     }
 
+    function colourRows() {
+        return testable().filter(function (r) { return C.testColours(liveFor(r).vs.colorOrder).length > 0; });
+    }
     function colourItems() {
-        var rows = testable().filter(function (r) { return C.testColours(liveFor(r).vs.colorOrder).length > 0; });
-        if (S.colour.scope === 'sel') {
-            var s = selRow();
-            rows = rows.filter(function (r) { return s && r.vs._uid === s.vs._uid; });
-        }
+        var rows = colourRows();
+        if (S.colour.scope === 'sel') rows = rows.filter(function (r) { return S.colour.picked[r.vs._uid]; });
         return rows;
+    }
+    /* Tick-box choice: every port with its strings/subports, in list order. */
+    function pickGroups() {
+        var g = [], byPort = {};
+        colourRows().forEach(function (r) {
+            var k = r.portNumber;
+            if (!byPort[k]) { byPort[k] = { port: k, rows: [] }; g.push(byPort[k]); }
+            byPort[k].rows.push(r);
+        });
+        return g;
+    }
+    function pickChanged() {
+        // the lights follow the ticks: resend the colour that is on to the new set, or switch off when nothing is ticked
+        if (S.colour.current && colourItems().length) { colourSend(S.colour.current); return; }
+        if (S.colour.current || S.verify) allOff();
+        render();
+    }
+    function pickToggle(uid) {
+        if (S.colour.picked[uid]) delete S.colour.picked[uid]; else S.colour.picked[uid] = true;
+        pickChanged();
+    }
+    function pickPort(port) {
+        var grp = pickGroups().filter(function (g) { return g.port === port; })[0];
+        if (!grp) return;
+        var all = grp.rows.every(function (r) { return S.colour.picked[r.vs._uid]; });
+        grp.rows.forEach(function (r) { if (all) delete S.colour.picked[r.vs._uid]; else S.colour.picked[r.vs._uid] = true; });
+        pickChanged();
+    }
+    function pickAll(on) {
+        S.colour.picked = {};
+        if (on) colourRows().forEach(function (r) { S.colour.picked[r.vs._uid] = true; });
+        pickChanged();
+    }
+    function renderPicker() {
+        var groups = pickGroups(), n = colourItems().length;
+        var h = '<div class="wltm-card wltm-pickcard"><h2>Choose what to test <span class="wltm-tag">tick any ports and subports, then send a colour</span></h2><div class="wltm-body">';
+        h += '<div class="wltm-row">' + btn('pick-all', 'Tick all', 'sm') + btn('pick-none', 'Untick all', 'sm') + btn('pick-selected', 'Only the string selected on the Ports tab', 'sm') + '<span class="wltm-cap" id="wltm-pick-count">' + n + ' string' + (n === 1 ? '' : 's') + ' ticked</span></div>';
+        if (!groups.length) h += '<div class="wltm-cap" style="margin-top:8px">No string with a colour order to test is on the lights yet.</div>';
+        h += '<div class="wltm-pickgrid">';
+        groups.forEach(function (g) {
+            var on = g.rows.filter(function (r) { return S.colour.picked[r.vs._uid]; }).length;
+            var single = g.rows.length === 1 && !g.rows[0].subLetter;
+            h += '<div class="wltm-pickport"><label class="wltm-portbox"><input type="checkbox" data-act="pick-port" data-port="' + g.port + '"' + (on === g.rows.length ? ' checked' : '') + (on > 0 && on < g.rows.length ? ' data-ind="1"' : '') + '> <b>Port ' + g.port + '</b>' + (single ? ' <span class="wltm-muted">' + esc(g.rows[0].vs.description || '') + '</span>' : (g.rows.length > 1 ? ' <span class="wltm-cap">with all its subports</span>' : '')) + '</label>';
+            if (!single) {
+                h += '<div class="wltm-picksubs">';
+                g.rows.forEach(function (r) {
+                    h += '<label><input type="checkbox" data-act="pick" data-uid="' + esc(r.vs._uid) + '"' + (S.colour.picked[r.vs._uid] ? ' checked' : '') + '> ' + (r.subLetter ? '<span class="wltm-sub">' + r.subLetter + '</span>' : '<span class="wltm-muted">–</span>') + ' ' + esc(r.vs.description || '(no name)') + '</label>';
+                });
+                h += '</div>';
+            }
+            h += '</div>';
+        });
+        h += '</div></div></div>';
+        return h;
     }
     function seenOf(row) {
         // answers only count for the colour order they were given under
@@ -356,7 +440,7 @@
         var f = C.colourFrame(parts, X);
         if (!f.ranges.length) { toast('None of these strings has a ' + C.COLOUR_NAMES[X].toLowerCase() + ' channel.', true); return; }
         S.colour.current = X;
-        show(f, C.COLOUR_NAMES[X] + ' on ' + (S.colour.scope === 'sel' && items.length === 1 ? C.rowLabel(items[0]) : items.length + ' strings'));
+        show(f, C.COLOUR_NAMES[X] + ' on ' + (items.length === 1 ? C.rowLabel(items[0]) : items.length + ' strings'));
         render();
     }
     function colourAnswer(uid, X, v) {
@@ -617,7 +701,7 @@
     function pill(cls, text) { return '<span class="wltm-pill ' + cls + '">' + esc(text) + '</span>'; }
     function btn(act, text, cls, attrs) { return '<button type="button" class="wltm-btn ' + (cls || '') + '" data-act="' + act + '"' + (attrs || '') + '>' + text + '</button>'; }
 
-    var LIGHT_ACTS = ['light', 'blink', 'first', 'identify-all', 'count-step', 'count-first', 'count-half', 'count-end', 'send', 'group-light', 'group-verify'];
+    var LIGHT_ACTS = ['light', 'blink', 'chase', 'first', 'identify-all', 'count-step', 'count-first', 'count-half', 'count-end', 'send', 'group-light', 'group-verify'];
     function applyDisabled() {
         if (!root || S.enabled) return;
         LIGHT_ACTS.forEach(function (a) {
@@ -738,6 +822,8 @@
         if (r && !liveFor(r)) h += notLive();
         else if (r) {
             h += '<div class="wltm-row">' + btn('light', 'Light this string', 'pri') + btn('blink', 'Blink') + btn('first', 'First pixel only') + '</div>';
+            h += '<div class="wltm-row" style="margin-top:10px">' + btn('chase', '▶ Chase start → end (loop)') + '<span class="wltm-cap">Speed:</span><div class="wltm-seg">' + [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']].map(function (x) { return '<button type="button" data-act="chase-speed" data-s="' + x[0] + '" class="' + (S.ident.speed === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div></div>';
+            h += '<div class="wltm-cap" style="margin-top:6px">A lit block runs from the first pixel to the last, then starts again, so you can see which end the data enters and which way the string runs. Press <b>Stop test · all off</b> to end it.</div>';
             h += '<div class="wltm-cap" style="margin-top:10px">Only this string is lit, so the one that lights up is ' + esc(C.rowLabel(r)) + '.</div>';
             h += '<div class="wltm-row" style="margin-top:12px"><span class="wltm-cap">Colour:</span>';
             [['W', 'w', 'White'], ['R', 'r', 'R'], ['G', 'g', 'G'], ['B', 'b', 'B']].forEach(function (c) {
@@ -801,12 +887,8 @@
         var items = colourItems(), cur = S.colour.current;
         var anyW = items.some(function (r) { return C.testColours(liveFor(r).vs.colorOrder).indexOf('W') >= 0; });
         var cols = anyW ? ['R', 'G', 'B', 'W'] : ['R', 'G', 'B'];
-        var sel = selRow();
         var h = '<div class="wltm-strip wltm-top">';
-        h += '<div><div class="wltm-cap">Test on</div><div class="wltm-seg"><button type="button" data-act="scope" data-s="all" class="' + (S.colour.scope === 'all' ? 'on' : '') + '">All ports</button><button type="button" data-act="scope" data-s="sel" class="' + (S.colour.scope === 'sel' ? 'on' : '') + '">Selected port only</button></div></div>';
-        if (S.colour.scope === 'sel') {
-            h += '<div><div class="wltm-cap">String</div><select id="wltm-colour-sel">' + testable().map(function (r) { return '<option value="' + esc(r.vs._uid) + '"' + (sel && sel.vs._uid === r.vs._uid ? ' selected' : '') + '>' + esc(C.rowLabel(r) + (r.vs.description ? ' · ' + r.vs.description : '')) + '</option>'; }).join('') + '</select></div>';
-        }
+        h += '<div><div class="wltm-cap">Test on</div><div class="wltm-seg"><button type="button" data-act="scope" data-s="all" class="' + (S.colour.scope === 'all' ? 'on' : '') + '">All ports</button><button type="button" data-act="scope" data-s="sel" class="' + (S.colour.scope === 'sel' ? 'on' : '') + '">Chosen ports (tick boxes)</button></div></div>';
         h += '<div><div class="wltm-cap">Send one colour at a time</div><div class="wltm-row">';
         cols.forEach(function (X) {
             var done = items.length && items.every(function (r) { return C.inputOffset(liveFor(r).vs.colorOrder, X) < 0 || seenOf(r)[X]; });
@@ -815,8 +897,9 @@
         h += '<button type="button" class="wltm-send" data-act="send" data-c=""><i class="k"></i>Off</button></div></div>';
         h += '<span class="wltm-grow"></span><div>' + btn('colour-restart', 'Restart test', 'sm') + '</div></div>';
 
+        if (S.colour.scope === 'sel') h += renderPicker();
         h += '<div class="wltm-cols wide"><div class="wltm-card"><h2>What colour comes out? <span class="wltm-tag">click the colour each string is showing right now</span></h2>';
-        if (!items.length) h += '<div class="wltm-body wltm-cap">No string to test here. ' + (S.colour.scope === 'sel' ? 'Select a string that is on the lights.' : '') + '</div>';
+        if (!items.length) h += '<div class="wltm-body wltm-cap">No string to test here. ' + (S.colour.scope === 'sel' ? 'Tick at least one port or subport above.' : '') + '</div>';
         else {
             if (cur) {
                 h += '<div class="wltm-body wltm-row wltm-quick"><span class="wltm-cap">Quick fill while sending ' + C.COLOUR_NAMES[cur] + ':</span>';
@@ -950,6 +1033,7 @@
         var nt = root.querySelector('#wltm-toasts');
         saved.forEach(function (n) { nt.appendChild(n); });
         Object.keys(keep).forEach(function (id) { var x = root.querySelector(id); if (x) x.value = keep[id]; });
+        Array.prototype.forEach.call(root.querySelectorAll('input[data-ind="1"]'), function (x) { x.indeterminate = true; });     // port ticked for some of its subports
         renderStatus();
         applyDisabled();
         var rn = root.querySelector('#wltm-rename');
@@ -1001,6 +1085,8 @@
             case 'dismiss-notice': S.notice = ''; renderStatus(); break;
             case 'light': lightSelected('all'); break;
             case 'blink': lightSelected('blink'); break;
+            case 'chase': runChase(selRow()); break;
+            case 'chase-speed': S.ident.speed = t.getAttribute('data-s'); render(); break;
             case 'first': lightSelected('first'); break;
             case 'ident-colour': S.ident.colour = t.getAttribute('data-c'); render(); break;
             case 'rename': S.edit = { key: t.getAttribute('data-key') }; S.add = null; render(); break;
@@ -1038,7 +1124,24 @@
             }
             case 'count-save': countSave(); break;
             case 'count-split': countSplit(); break;
-            case 'scope': if (S.colour.scope !== t.getAttribute('data-s')) { allOff(); S.colour.scope = t.getAttribute('data-s'); } render(); break;
+            case 'scope':
+                if (S.colour.scope !== t.getAttribute('data-s')) {
+                    allOff(); S.colour.scope = t.getAttribute('data-s');
+                    if (S.colour.scope === 'sel' && !colourItems().length) {                    // start from the string selected on the Ports tab
+                        var s0 = selRow();
+                        if (s0 && colourRows().some(function (r) { return r.vs._uid === s0.vs._uid; })) S.colour.picked[s0.vs._uid] = true;
+                    }
+                }
+                render(); break;
+            case 'pick': pickToggle(t.getAttribute('data-uid')); break;
+            case 'pick-port': pickPort(parseInt(t.getAttribute('data-port'), 10)); break;
+            case 'pick-all': pickAll(true); break;
+            case 'pick-none': pickAll(false); break;
+            case 'pick-selected': {
+                var s1 = selRow(); S.colour.picked = {};
+                if (s1 && colourRows().some(function (r) { return r.vs._uid === s1.vs._uid; })) S.colour.picked[s1.vs._uid] = true;
+                pickChanged(); break;
+            }
             case 'send': colourSend(t.getAttribute('data-c')); break;
             case 'answer': colourAnswer(t.getAttribute('data-uid'), S.colour.current, t.getAttribute('data-v')); saveRecord(); render(); break;
             case 'fill': colourFill(t.getAttribute('data-v'), false); break;
@@ -1067,7 +1170,6 @@
     function onChange(ev) {
         var t = ev.target;
         if (t.id === 'wltm-bright') { S.brightness = C.toInt(t.value, 30); var v = root.querySelector('#wltm-bright-val'); if (v) v.textContent = S.brightness + '%'; reshow(); }
-        else if (t.id === 'wltm-colour-sel') { allOff(); S.sel = t.value; render(); }
         else if (t.id === 'wltm-count-save') { S.count.save = t.value; }
         else if (t.id === 'wltm-count-note') { var cr = selRow(); if (cr) { S.count.note[cr.vs._uid] = t.value; notePreview(cr); } }
         else if (t.getAttribute && t.getAttribute('data-change') === 'group-choice') { S.colour.choice[t.getAttribute('data-order')] = t.value; render(); }

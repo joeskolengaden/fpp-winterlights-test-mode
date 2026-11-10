@@ -613,6 +613,99 @@ test('count tab: custom tags - standard list, add, remove, reorder, kept after r
     await post({ version: 1, tags: C.DEFAULT_TAGS });
 });
 
+test('colour tab: tick any ports and subports, a port ticks all its subports, the lights follow the ticks', async () => {
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    await tab('colour');
+    await act('scope', '[data-s="sel"]');
+    const checked = async (sel) => page.locator('#wltm ' + sel).evaluate(e => e.checked);
+    const indet = async (sel) => page.locator('#wltm ' + sel).evaluate(e => e.indeterminate);
+    const rowsShown = async () => (await page.locator('#wltm .wltm-cols.wide .wltm-table tr').count()) - 1;
+    const P = (n) => 'input[data-act="pick-port"][data-port="' + n + '"]';
+    assert.ok(await page.locator('#wltm .wltm-pickcard').isVisible(), 'the tick boxes are shown');
+    await act('pick-none');
+    // ticking a port ticks all its subports; ticking one subport leaves the port half-ticked
+    await act('pick-port', '[data-port="3"]');
+    assert.equal(await checked(P(3)), true);
+    assert.equal(await page.locator('#wltm input[data-act="pick"]:checked').count(), 2, 'subports A and B are both ticked');
+    assert.match(await text('#wltm-pick-count'), /^2 strings ticked/);
+    await page.click('#wltm input[data-act="pick"] >> nth=1');           // untick subport B
+    await settle();
+    assert.equal(await checked(P(3)), false);
+    assert.equal(await indet(P(3)), true, 'the port box shows a dash when only some subports are ticked');
+    await page.click('#wltm input[data-act="pick"] >> nth=1');           // tick B again
+    await settle();
+    assert.equal(await checked(P(3)), true);
+    assert.equal(await indet(P(3)), false);
+    // port 1 as well: three strings, and the colour goes to exactly those
+    await act('pick-port', '[data-port="1"]');
+    assert.match(await text('#wltm-pick-count'), /^3 strings ticked/);
+    assert.equal(await rowsShown(), 3);
+    await act('send', '[data-c="R"]');
+    assert.deepEqual(litKeys().sort(), ['0:0:0', '0:2:0', '0:2:1']);
+    await shot('04b-pick');
+    // untick port 3 while red is on: the lights follow
+    await act('pick-port', '[data-port="3"]');
+    assert.deepEqual(litKeys(), ['0:0:0']);
+    assert.equal(await rowsShown(), 1);
+    // tick everything, then nothing: nothing ticked switches the lights off
+    await act('pick-all');
+    assert.equal(await rowsShown(), 5, 'ports 1, 2, 3A, 3B and 4 all have a colour order to test');
+    assert.ok(litKeys().length >= 4);
+    await act('pick-none');
+    assert.deepEqual(litKeys(), []);
+    assert.match(await text('#wltm .wltm-cols.wide'), /Tick at least one port or subport/);
+    // an answer given in the chosen set only touches the chosen strings
+    await act('pick-port', '[data-port="2"]');
+    await act('send', '[data-c="G"]');
+    assert.equal(await rowsShown(), 1);
+    await act('send', '[data-c=""]');
+    await act('scope', '[data-s="all"]');
+    assert.equal(await page.locator('#wltm .wltm-pickcard').count(), 0, 'All ports hides the tick boxes');
+});
+
+test('identify: the chase runs a lit block from the first pixel to the last, in a loop, then stops', async () => {
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    await selectRow('Roof left');                                       // 50 RGB pixels on channels 1-150
+    await shot('01b-identify');
+    const before = requests().length;
+    await page.click('#wltm [data-act="chase-speed"][data-s="fast"]');
+    await page.click('#wltm [data-act="chase"]');
+    const lit = () => requests().slice(before).filter(l => l.startsWith('testmode ')).map(l => JSON.parse(l.slice(9)))
+        .filter(r => r.enabled === 1 && r.color1 > 0).map(r => r.channelSet.split(';')[0].split('-').map(Number));
+    const t0 = Date.now();
+    while (lit().length < 32 && Date.now() - t0 < 120000) await page.waitForTimeout(250);
+    assert.ok(lit().length >= 32, 'the chase keeps sending frames');
+    assert.match(await text('#wltm-status'), /chase, pixel \d+/, 'the status line shows where the chase is');
+    await act('all-off');
+    const f = lit();
+    assert.equal(f[0][0], 1, 'it starts on the first pixel (channel 1)');
+    assert.equal(f[0][1], 6, 'the block is 2 pixels wide on a 50-pixel string');
+    let wraps = 0;
+    for (let i = 1; i < f.length; i++) {
+        if (f[i][0] === 1) { wraps++; assert.ok(f[i - 1][0] >= 100, 'it only starts over after reaching the far end'); }
+        else assert.equal(f[i][0], f[i - 1][0] + 6, 'each step moves on by one block, never backwards');
+    }
+    assert.ok(wraps >= 1, 'it loops back to the start');
+    assert.ok(f.every(r => r[1] <= 150), 'it never leaves the string');
+    const n = requests().length;
+    await page.waitForTimeout(1500);
+    assert.equal(requests().length, n, 'nothing more is sent after stopping');
+    assert.deepEqual(litKeys(), []);
+    // switching tab stops a running chase too
+    await page.click('#wltm [data-act="chase"]');
+    await page.waitForTimeout(800);
+    await tab('count');
+    const m = requests().length;
+    await page.waitForTimeout(1500);
+    assert.equal(requests().length, m, 'a chase does not outlive the tab');
+    assert.deepEqual(litKeys(), []);
+    await tab('ports');
+});
+
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {
     const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
     const before = fs.readFileSync(cfgFile(), 'utf8');
