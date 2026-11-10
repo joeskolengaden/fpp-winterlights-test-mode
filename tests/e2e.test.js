@@ -3,7 +3,7 @@
  * Browser test of the whole page against a stand-in FPP (tests/mock-fpp/router.php).
  * The test plays the person at the lights: it replays every test-mode request into a model of fppd's channel
  * tester and of the pixel wiring, "looks" at the LEDs, and clicks what it sees.
- *   node --test tests/e2e.test.js        (needs php and playwright)
+ *   node --test tests/e2e.test.js        (needs php and playwright; set WLTM_CHROME=/path/to/chrome to use an installed browser)
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -103,7 +103,7 @@ test.before(async () => {
     for (let i = 0; i < 50; i++) {
         try { await fetch('http://127.0.0.1:' + port + '/api/fppd/status'); break; } catch (e) { await new Promise(r => setTimeout(r, 100)); }
     }
-    browser = await chromium.launch();
+    browser = await chromium.launch(process.env.WLTM_CHROME ? { executablePath: process.env.WLTM_CHROME } : {});
     page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.on('dialog', d => d.accept());
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));

@@ -12,6 +12,8 @@ $settings = array('configDirectory' => $mock . '/config', 'co-bbbStrings' => $mo
 
 function mock_log($line) { global $mock; file_put_contents($mock . '/requests.log', $line . "\n", FILE_APPEND | LOCK_EX); }
 
+if ($path === '/favicon.ico') { http_response_code(204); return true; }     // browsers ask for it; a 404 would show up as a console error
+
 if ($path === '/api/testmode') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') mock_log('testmode ' . file_get_contents('php://input'));
     header('Content-Type: application/json'); echo 'null'; return true;

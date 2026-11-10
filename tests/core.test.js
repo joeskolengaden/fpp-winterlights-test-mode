@@ -363,3 +363,16 @@ test('removeSubport: any subport, later ones move up, receiver count goes down, 
     assert.equal(C.removeSubport(d1, 0, 0, 0).ok, false, 'a port without subports');
     assert.equal(C.removeSubport(draft, 0, 2, 9).ok, false);
 });
+
+// FPP's www/api/index.php require_once()s <plugin>/api.php on EVERY /api/ request and then calls
+// getEndpoints<name>(). Our backend runs its handler and exit()s at load time, so it must never be called api.php
+// (that once broke the whole FPP API: /api/plugin, /api/configfile, fppd restart all answered "Unknown action").
+test('no plugin file is named api.php (FPP would load it into every API request)', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    assert.equal(fs.existsSync(path.join(root, 'api.php')), false);
+    assert.ok(fs.existsSync(path.join(root, 'wltm-api.php')));
+    for (const f of ['js/wltm-ui.js', 'tests/e2e.test.js', 'tests/hw/check_fpp.py']) {
+        assert.ok(!/page=api\.php/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' still points at api.php');
+    }
+});

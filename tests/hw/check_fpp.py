@@ -2,7 +2,7 @@
 """
 Check a real FPP controller with Winterlights Test Mode installed. Python 3 standard library only.
 
-    python3 tests/hw/check_fpp.py                      # read-only checks against http://192.168.7.2
+    python3 tests/hw/check_fpp.py                      # read-only checks against http://192.168.7.2 (a BBB on a Mac over USB is http://192.168.6.2)
     python3 tests/hw/check_fpp.py http://fpp.local --light
     python3 tests/hw/check_fpp.py --light --roundtrip  # also lights channels 1-3 briefly / rewrites the config unchanged
 
@@ -62,6 +62,13 @@ def main():
 
     code, _, body = get(base, "/api/plugin")
     say(code == 200 and PLUGIN in body, "plugin is installed", body[:120].replace("\n", " "))
+    try:
+        ok_list = isinstance(json.loads(body), list)
+    except Exception:
+        ok_list = False
+    say(ok_list, "FPP's own plugin API still answers normally (plugin does not hijack /api/)", body[:80].replace("\n", " "))
+    code, _, body = get(base, "/api/configfile")
+    say(code == 200 and '"ConfigFiles"' in body, "FPP's configfile API still answers normally", body[:80].replace("\n", " "))
 
     code, _, body = get(base, "/plugin.php?plugin=%s&page=plugin.php&nopage=1" % PLUGIN)
     say(code == 200 and 'id="wltm"' in body, "page shell served", "%d bytes" % len(body))
