@@ -24,6 +24,7 @@ function wltm_strings_file() {
 function wltm_data_dir() { return wltm_config_dir() . '/winterlights-test-mode'; }
 function wltm_backup_dir() { return wltm_data_dir() . '/backups'; }
 function wltm_record_file() { return wltm_data_dir() . '/record.json'; }
+function wltm_tags_file() { return wltm_data_dir() . '/tags.json'; }
 
 function wltm_out($data, $code = 200) {
     while (ob_get_level() > 0) { @ob_end_clean(); }
@@ -124,12 +125,15 @@ if ($wltmAction === 'state') {
     $liveText = file_exists($file) ? file_get_contents($file) : false;
     $recFile = wltm_record_file();
     $recText = file_exists($recFile) ? file_get_contents($recFile) : false;
+    $tagFile = wltm_tags_file();
+    $tagText = file_exists($tagFile) ? file_get_contents($tagFile) : false;
     wltm_out(array(
         'ok' => true,
         'liveExists' => $liveText !== false,
         'liveText' => $liveText === false ? '' : $liveText,
         'liveHash' => $liveText === false ? '' : md5($liveText),
         'recordText' => $recText === false ? '' : $recText,
+        'tagsText' => $tagText === false ? '' : $tagText,
         'backups' => wltm_backups(),
         'configFile' => $file
     ));
@@ -143,6 +147,21 @@ if ($wltmAction === 'saveRecord') {
     if (!is_array($d) || !isset($d['version'])) wltm_fail('The record is not valid JSON.');
     wltm_ensure_dirs();
     if (!wltm_write_atomic(wltm_record_file(), $text)) wltm_fail('Cannot write the record file.', 500);
+    wltm_out(array('ok' => true));
+}
+
+/* The description tags offered in the Count tab: a list of short strings kept in <config>/winterlights-test-mode/tags.json */
+if ($wltmAction === 'saveTags') {
+    wltm_require_post();
+    $text = wltm_body();
+    if (strlen($text) > 64 * 1024) wltm_fail('Tag list too large.');
+    $d = json_decode($text, true);
+    if (!is_array($d) || !isset($d['version']) || !isset($d['tags']) || !is_array($d['tags']) || count($d['tags']) > 100) wltm_fail('The tag list is not valid.');
+    foreach ($d['tags'] as $k => $t) {
+        if (!is_int($k) || !is_string($t) || $t === '' || strlen($t) > 120 || preg_match('/[\x00-\x1f"\'\\\\<>&|]/', $t)) wltm_fail('The tag list is not valid.');
+    }
+    wltm_ensure_dirs();
+    if (!wltm_write_atomic(wltm_tags_file(), $text)) wltm_fail('Cannot write the tag list.', 500);
     wltm_out(array('ok' => true));
 }
 

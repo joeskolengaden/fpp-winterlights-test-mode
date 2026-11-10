@@ -439,3 +439,15 @@ test('description notes: the generated name is kept, the note rides on its tail,
     const names = d[0].outputs[0].virtualStrings.map(v => v.description);
     assert.deepEqual(names, ['Roof | left to right', 'Roof part 2']);
 });
+
+test('description tags: the standard list, tidy-up, no repeats, no pipes', () => {
+    assert.deepEqual(C.DEFAULT_TAGS, ['Lip', 'driver side eye', 'cleaner side eye', 'top grill', 'main grill', 'bottom grill', 'top light',
+        'u bar centre', 'u bar driver side beam', 'u bar cleaner side beam', 'eye', 'eyebrow']);
+    assert.deepEqual(C.cleanTags(C.DEFAULT_TAGS), C.DEFAULT_TAGS, 'the standard list is already clean');
+    assert.deepEqual(C.cleanTags(['  Top  grill ', 'top GRILL', 'a | b', '', '   ', 'x"y<z>', 5, null]), ['Top grill', 'a b', 'xyz']);
+    assert.equal(C.cleanTags(['y'.repeat(100)])[0].length, C.TAG_MAX_LEN);
+    assert.equal(C.cleanTags(Array.from({ length: 300 }, (_, i) => 'tag' + i)).length, 100);
+    assert.deepEqual(C.cleanTags('nope'), []);
+    // a tag used as a note fits the same 60-character description rule
+    assert.equal(C.withNote('port 3', 'u bar driver side beam').text, 'port 3 | u bar driver side beam');
+});

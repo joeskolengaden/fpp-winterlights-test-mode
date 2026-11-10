@@ -367,6 +367,23 @@
         return { text: n ? base + NOTE_SEP + n : base, cut: cut, note: n };
     }
 
+    /* Tags offered as one-click words for the description note (editable on the page, kept on the controller). */
+    var DEFAULT_TAGS = ['Lip', 'driver side eye', 'cleaner side eye', 'top grill', 'main grill', 'bottom grill', 'top light',
+        'u bar centre', 'u bar driver side beam', 'u bar cleaner side beam', 'eye', 'eyebrow'];
+    var TAG_MAX_LEN = 40, TAG_MAX_COUNT = 100;
+    /* A tidy tag list: cleaned like a description, no pipe, at most 40 characters each, no empty or repeated tags (the
+       first spelling wins), at most 100 tags. */
+    function cleanTags(list) {
+        var out = [], seen = {};
+        (Array.isArray(list) ? list : []).forEach(function (t) {
+            if (typeof t !== 'string') return;
+            var c = cleanDescription(t).replace(/\s*\|\s*/g, ' ').trim().slice(0, TAG_MAX_LEN).trim();
+            if (!c || seen[c.toLowerCase()] || out.length >= TAG_MAX_COUNT) return;
+            seen[c.toLowerCase()] = 1; out.push(c);
+        });
+        return out;
+    }
+
     /* Rename a string or an empty port/subport. */
     function renameRow(draft, row, name) {
         name = cleanDescription(name);
@@ -735,7 +752,7 @@
         orderInfo: orderInfo, inputOffset: inputOffset, testColours: testColours, allowedOrders: allowedOrders, detectOrder: detectOrder,
         subportCount: subportCount, defaultVs: defaultVs, dataPixels: dataPixels, listRows: listRows, rowLabel: rowLabel,
         makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft,
-        cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
+        cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, DEFAULT_TAGS: DEFAULT_TAGS, cleanTags: cleanTags, TAG_MAX_LEN: TAG_MAX_LEN, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
         findByUid: findByUid, removeNewString: removeNewString, removeSubport: removeSubport, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
         pixelChannel: pixelChannel, mergeRanges: mergeRanges, setString: setString, pixelRanges: pixelRanges,
         emptyFrame: emptyFrame, solidFrame: solidFrame, colourFrame: colourFrame, frameRequest: frameRequest, identifyAllFrame: identifyAllFrame,

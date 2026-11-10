@@ -556,6 +556,62 @@ test('count tab: a note typed while counting is added to the end of the descript
     assert.ok(!(await text('#wltm .wltm-table')).includes('Garage arch'));
 });
 
+test('count tab: custom tags - standard list, add, remove, reorder, kept after reload, used in the note', async () => {
+    const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    await tab('count');
+    await selectRow('Roof left');
+    const chips = async () => page.locator('#wltm [data-act="note-chip"]').evaluateAll(els => els.map(e => e.getAttribute('data-chip')));
+    assert.deepEqual((await chips()).slice(0, 12), C.DEFAULT_TAGS, 'your twelve tags come first');
+    // using tags: they add to the note, separated by commas
+    await act('note-chip', '[data-chip="top grill"]');
+    await act('note-chip', '[data-chip="u bar centre"]');
+    assert.equal(await page.inputValue('#wltm-count-note'), 'top grill, u bar centre');
+    await page.click('#wltm [data-act="note-clear"]');
+    assert.equal(await page.inputValue('#wltm-count-note'), '');
+    // edit: add, refuse a repeat, move, remove
+    await act('tag-edit');
+    await shot('02c-tags');
+    await page.fill('#wltm-tag-new', 'Fog light');
+    await page.keyboard.press('Enter');
+    await settle();
+    assert.ok((await chips()).includes('Fog light'));
+    await page.fill('#wltm-tag-new', 'fog LIGHT');
+    await act('tag-add');
+    assert.equal((await chips()).filter(c => c.toLowerCase() === 'fog light').length, 1, 'a repeat is refused');
+    await page.click('#wltm [data-act="tag-move"][data-i="0"][data-d="1"]');
+    await settle();
+    assert.deepEqual((await chips()).slice(0, 2), ['driver side eye', 'Lip']);
+    await page.click('#wltm [data-act="tag-del"][data-i="1"]');
+    await settle();
+    assert.ok(!(await chips()).includes('Lip'));
+    const saved = JSON.parse((await (await fetch(api('state'))).text()).trim()).tagsText;
+    assert.ok(saved.includes('Fog light') && !saved.includes('"Lip"'), 'saved on the controller');
+    // kept after a reload
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    await tab('count');
+    await selectRow('Roof left');
+    assert.ok((await chips()).includes('Fog light') && !(await chips()).includes('Lip'));
+    // reset
+    await act('tag-edit');
+    await act('tag-reset');
+    assert.deepEqual((await chips()).slice(0, 12), C.DEFAULT_TAGS);
+    // the backend refuses a bad tag list
+    const post = async (body) => (await fetch(api('saveTags'), { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) })).status;
+    assert.equal(await post('not json'), 400);
+    assert.equal(await post({ version: 1, tags: 'x' }), 400);
+    assert.equal(await post({ version: 1, tags: ['ok', 'a|b'] }), 400);
+    assert.equal(await post({ version: 1, tags: ['ok', 'say "hi"'] }), 400);
+    assert.equal(await post({ version: 1, tags: [''] }), 400);
+    assert.equal((await fetch(api('saveTags'))).status, 405);
+    assert.equal(await post({ version: 1, tags: ['fine'] }), 200);
+    await post({ version: 1, tags: C.DEFAULT_TAGS });
+});
+
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {
     const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
     const before = fs.readFileSync(cfgFile(), 'utf8');

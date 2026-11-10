@@ -21,6 +21,8 @@
         lit: { label: '', note: '' },
         ident: { colour: 'W' },
         count: { pos: {}, started: false, save: '', note: {} },
+        tags: null,                     // description tags offered in the Count tab; null = built-in list until loaded
+        tagEdit: false,                 // tag editor open
         colour: { scope: 'all', current: '', choice: {} },
         verify: null,
         edit: null,                     // { key } row being renamed
@@ -124,6 +126,10 @@
             if (S.liveRoot && Array.isArray(S.liveRoot.channelOutputs)) S.liveOutputs = S.liveRoot.channelOutputs;
         }
         S.lidx = C.liveIndex(S.liveOutputs);
+        S.tags = null;
+        if (d.tagsText) {
+            try { var tg = JSON.parse(d.tagsText); if (tg && Array.isArray(tg.tags)) S.tags = C.cleanTags(tg.tags); } catch (e) { S.tags = null; }
+        }
         var rec = null;
         if (d.recordText) { try { rec = JSON.parse(d.recordText); } catch (e) { rec = null; } }
         if (rec && rec.version === 1 && Array.isArray(rec.draft) && rec.baseHash === S.liveHash) {
@@ -244,7 +250,29 @@
         show(f, 'Identify all ports');
     }
 
-    var NOTE_CHIPS = ['left to right', 'right to left', 'bottom to top', 'top to bottom', 'clockwise', 'anticlockwise', 'outline', 'roofline', 'tree', 'arch', 'window', 'fence'];
+    var DIRECTION_CHIPS = ['left to right', 'right to left', 'bottom to top', 'top to bottom', 'clockwise', 'anticlockwise'];
+    function tagList() { return S.tags === null ? C.DEFAULT_TAGS : S.tags; }
+    function saveTags() {
+        return call('saveTags', { version: 1, tags: tagList() }).catch(function (e) { toast('Could not save the tags: ' + e.message, true); });
+    }
+    function tagAdd() {
+        var inp = root.querySelector('#wltm-tag-new');
+        if (!inp) return;
+        var before = tagList(), after = C.cleanTags(before.concat([inp.value]));
+        if (after.length === before.length) { toast(inp.value.trim() ? 'That tag is already in the list.' : 'Type a tag first.', true); return; }
+        S.tags = after; saveTags(); render();
+        var n = root.querySelector('#wltm-tag-new'); if (n) n.focus();
+    }
+    function tagDel(i) {
+        var l = tagList().slice(); l.splice(i, 1);
+        S.tags = l; saveTags(); render();
+    }
+    function tagMove(i, d) {
+        var l = tagList().slice(), j = i + d;
+        if (j < 0 || j >= l.length) return;
+        var x = l[i]; l[i] = l[j]; l[j] = x;
+        S.tags = l; saveTags(); render();
+    }
     function countMax(row) { return row && !row.empty ? C.countLimit(S.record.draft, row.vs, S.lidx) : 0; }
     function countPos(row) {
         var max = countMax(row);
@@ -745,7 +773,15 @@
             var curNote = typed !== undefined ? typed : C.descNote(r.vs.description);
             h += '<div class="wltm-card-in" style="margin-top:14px"><div class="wltm-cap">Description <b class="wltm-mono">' + esc(base || '(no name)') + '</b> <span class="wltm-muted">+ your note, added to the end:</span></div>';
             h += '<div class="wltm-row"><input type="text" id="wltm-count-note" maxlength="' + room + '"' + (room ? '' : ' disabled') + ' placeholder="what the LEDs show · which prop · which direction, e.g. Front roofline, left to right" value="' + esc(curNote) + '" style="width:min(520px,100%)"></div>';
-            h += '<div class="wltm-row" style="margin-top:6px">' + NOTE_CHIPS.map(function (c) { return btn('note-chip', c, 'sm', ' data-chip="' + esc(c) + '"'); }).join('') + '</div>';
+            h += '<div class="wltm-row" style="margin-top:6px"><span class="wltm-cap">Tags</span>' + tagList().map(function (c) { return btn('note-chip', c, 'sm', ' data-chip="' + esc(c) + '"'); }).join('') + btn('tag-edit', S.tagEdit ? 'Done' : '✎ Edit tags', 'sm', '') + '</div>';
+            if (S.tagEdit) {
+                h += '<div class="wltm-tagedit"><div class="wltm-cap">Your tags are saved on the controller. Click a tag above to add it to the note.</div><div class="wltm-row" style="margin-top:6px">';
+                tagList().forEach(function (c, i) {
+                    h += '<span class="wltm-tagrow">' + esc(c) + ' <button type="button" class="wltm-pen" data-act="tag-move" data-i="' + i + '" data-d="-1" title="Move earlier">◀</button><button type="button" class="wltm-pen" data-act="tag-move" data-i="' + i + '" data-d="1" title="Move later">▶</button><button type="button" class="wltm-pen" data-act="tag-del" data-i="' + i + '" title="Remove this tag">✕</button></span>';
+                });
+                h += '</div><div class="wltm-row" style="margin-top:8px"><input type="text" id="wltm-tag-new" maxlength="' + C.TAG_MAX_LEN + '" placeholder="new tag, e.g. top light" style="width:240px">' + btn('tag-add', 'Add tag', 'sm green', '') + btn('tag-reset', 'Reset to the standard list', 'sm', '') + '</div></div>';
+            }
+            h += '<div class="wltm-row" style="margin-top:6px"><span class="wltm-cap">Direction</span>' + DIRECTION_CHIPS.map(function (c) { return btn('note-chip', c, 'sm', ' data-chip="' + esc(c) + '"'); }).join('') + btn('note-clear', 'Clear note', 'sm', '') + '</div>';
             h += '<div class="wltm-cap" style="margin-top:6px">FPP will show: <span class="wltm-mono" id="wltm-count-preview">' + esc(C.withNote(r.vs.description, curNote).text) + '</span> <span class="wltm-muted" id="wltm-count-room">(' + room + ' characters left)</span>' + (room ? '' : ' <b>The generated name already uses all 60 characters, so there is no room for a note. Shorten the name with ✎ first.</b>') + '</div></div>';
             if (started) {
                 h += '<div class="wltm-row" style="margin-top:14px"><label>Pixel count to save <input type="number" id="wltm-count-save" min="1" max="' + C.MAX_PIXELS_PER_STRING + '" value="' + esc(S.count.save || pos) + '" style="width:90px"></label>' + btn('count-save', 'Last LED is lit · save count', 'green') + btn('count-split', 'Split here · pixels after ' + pos + ' become a new string', '', pos >= max ? ' disabled' : '') + '</div>';
@@ -990,6 +1026,16 @@
                 }
                 break;
             }
+            case 'tag-edit': S.tagEdit = !S.tagEdit; render(); break;
+            case 'tag-add': tagAdd(); break;
+            case 'tag-del': tagDel(parseInt(t.getAttribute('data-i'), 10)); break;
+            case 'tag-move': tagMove(parseInt(t.getAttribute('data-i'), 10), parseInt(t.getAttribute('data-d'), 10)); break;
+            case 'tag-reset': if (window.confirm('Replace your tag list with the standard list?')) { S.tags = C.DEFAULT_TAGS.slice(); saveTags(); render(); } break;
+            case 'note-clear': {
+                var r1 = selRow(), inp1 = root.querySelector('#wltm-count-note');
+                if (r1 && inp1) { inp1.value = ''; S.count.note[r1.vs._uid] = ''; notePreview(r1); inp1.focus(); }
+                break;
+            }
             case 'count-save': countSave(); break;
             case 'count-split': countSplit(); break;
             case 'scope': if (S.colour.scope !== t.getAttribute('data-s')) { allOff(); S.colour.scope = t.getAttribute('data-s'); } render(); break;
@@ -1029,6 +1075,7 @@
 
     function onKey(ev) {
         var tag = ev.target && ev.target.tagName;
+        if (ev.target && ev.target.id === 'wltm-tag-new') { if (ev.key === 'Enter') { ev.preventDefault(); tagAdd(); } return; }
         if (ev.target && ev.target.id === 'wltm-rename') {
             if (ev.key === 'Enter') { ev.preventDefault(); renameCommit(); }
             else if (ev.key === 'Escape') { S.edit = null; render(); }
