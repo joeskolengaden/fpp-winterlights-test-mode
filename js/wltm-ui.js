@@ -44,7 +44,7 @@
         return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
     }
     function apiUrl(action) {
-        return 'plugin.php?plugin=' + encodeURIComponent(S.plugin) + '&page=api.php&nopage=1&action=' + encodeURIComponent(action);
+        return 'plugin.php?plugin=' + encodeURIComponent(S.plugin) + '&page=wltm-api.php&nopage=1&action=' + encodeURIComponent(action);
     }
     function parseLoose(text) {
         // FPP may put stray whitespace around a plugin page's output

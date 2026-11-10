@@ -1,7 +1,9 @@
 <?php
 /*
  * Winterlights Test Mode - backend.
- * Reached through FPP's plugin loader:  plugin.php?plugin=<dir>&page=api.php&nopage=1&action=<name>
+ * Reached through FPP's plugin loader:  plugin.php?plugin=<dir>&page=wltm-api.php&nopage=1&action=<name>
+ * NOT named api.php on purpose: FPP require_once()s every plugin's api.php on EVERY /api/ request, and this file
+ * runs its handler and exit()s at load time, which would break the whole FPP API (plugin list, config, restart...).
  *
  * It only touches two things on disk:
  *   - FPP's pixel-string config (co-bbbStrings.json), and only on "apply" / "restore", after saving a backup;

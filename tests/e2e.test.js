@@ -504,7 +504,7 @@ test('warnings: playlist running, fppd down; loader works when FPP does not add 
 });
 
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {
-    const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=api.php&nopage=1&action=' + a;
+    const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
     const before = fs.readFileSync(cfgFile(), 'utf8');
     const hash = require('crypto').createHash('md5').update(before).digest('hex');
     const post = async (a, body) => { const r = await fetch(api(a), { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }); return [r.status, JSON.parse((await r.text()).trim())]; };

@@ -31,7 +31,7 @@ def get(base, path, data=None, timeout=15):
 
 
 def plug(action):
-    return "/plugin.php?plugin=%s&page=api.php&nopage=1&action=%s" % (PLUGIN, action)
+    return "/plugin.php?plugin=%s&page=wltm-api.php&nopage=1&action=%s" % (PLUGIN, action)
 
 
 def parse(text):
