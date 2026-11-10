@@ -99,7 +99,11 @@ test.before(async () => {
     fs.mkdirSync(path.join(dir, 'config'));
     fs.writeFileSync(cfgFile(), JSON.stringify(fixture(), null, 2));
     port = 20000 + Math.floor(Math.random() * 20000);
-    server = spawn('php', ['-S', '127.0.0.1:' + port, path.join(__dirname, 'mock-fpp', 'router.php')], { env: Object.assign({}, process.env, { WLTM_MOCK_DIR: dir }), stdio: 'ignore' });
+    // the controller's boot id: tests change this file to play a reboot. The plugin starts switched on for boot-1.
+    fs.writeFileSync(path.join(dir, 'boot_id'), 'boot-1\n');
+    fs.mkdirSync(path.join(dir, 'config', 'winterlights-test-mode'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config', 'winterlights-test-mode', 'enabled.json'), JSON.stringify({ version: 1, bootId: 'boot-1' }));
+    server = spawn('php', ['-S', '127.0.0.1:' + port, path.join(__dirname, 'mock-fpp', 'router.php')], { env: Object.assign({}, process.env, { WLTM_MOCK_DIR: dir, WLTM_BOOT_ID_FILE: path.join(dir, 'boot_id') }), stdio: 'ignore' });
     for (let i = 0; i < 50; i++) {
         try { await fetch('http://127.0.0.1:' + port + '/api/fppd/status'); break; } catch (e) { await new Promise(r => setTimeout(r, 100)); }
     }
@@ -107,7 +111,7 @@ test.before(async () => {
     page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.on('dialog', d => d.accept());
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-    page.on('console', m => { if (m.type() === 'error' && !/409 \(Conflict\)/.test(m.text())) errors.push('console: ' + m.text()); });   // the 409 is the refusal test 10 provokes
+    page.on('console', m => { if (m.type() === 'error' && !/409 \(Conflict\)|403 \(Forbidden\)/.test(m.text())) errors.push('console: ' + m.text()); });   // the 409 and the 403 are refusals the tests provoke on purpose
 });
 test.after(async () => {
     if (browser) await browser.close();
@@ -125,7 +129,7 @@ test('page loads and lists every port and subport', async () => {
     assert.match(rows[3], /^3\s+A\s+Window 1/);
     assert.match(rows[4], /^3\s+B\s+Window 2/);
     assert.match(rows[6], /^5\s+–\s+\(empty\).*Unused/s);
-    assert.match(await text('#wltm-status'), /Test mode enabled.*Lights off.*fppd running.*5 ports · 5 strings/s);
+    assert.match(await text('#wltm-status'), /Plugin enabled.*Lights off.*fppd running.*5 ports · 5 strings/s);
     assert.deepEqual(requests(), [], 'nothing is sent to the lights just by opening the page');
     await shot('01-ports');
 });
@@ -163,7 +167,7 @@ test('master switch: disabling turns everything off and blocks lighting; enablin
     await act('toggle-enabled');
     assert.deepEqual(litKeys(), [], 'disabling switches the lights off');
     assert.equal(sim().on, false);
-    assert.match(await text('#wltm-status'), /Test mode DISABLED[\s\S]*Nothing can be lit/);
+    assert.match(await text('#wltm-status'), /Plugin DISABLED[\s\S]*Nothing can be lit/);
     const n = requests().length;
     for (const a of ['light', 'blink', 'first', 'identify-all']) assert.equal(await page.locator('#wltm [data-act="' + a + '"]').first().isDisabled().catch(() => true), true, a + ' is disabled');
     await page.keyboard.press('ArrowRight');
@@ -173,7 +177,7 @@ test('master switch: disabling turns everything off and blocks lighting; enablin
     assert.equal(await page.locator('#wltm [data-act="send"][data-c="R"]').isDisabled(), true);
     await tab('ports');
     await act('toggle-enabled');
-    assert.match(await text('#wltm-status'), /Test mode enabled/);
+    assert.match(await text('#wltm-status'), /Plugin enabled/);
     await act('light');
     assert.deepEqual(litKeys(), ['0:2:1']);
     await act('all-off');
@@ -762,6 +766,80 @@ test('apply from one page: colour order only, then names only; the rest keeps wa
     await settle();
     assert.equal(disk()[2].virtualStrings[0].colorOrder, 'RGBW');
     assert.match(await text('#wltm .wltm-foot'), /Nothing waiting/);
+});
+
+test('after a reboot the plugin is off until the user switches it on; an fppd restart does not switch it off', async () => {
+    const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
+    const bootFile = path.join(dir, 'boot_id');
+    const post = async (a, body) => { const r = await fetch(api(a), { method: 'POST', body: JSON.stringify(body) }); return [r.status, JSON.parse((await r.text()).trim())]; };
+    const state = async () => JSON.parse((await (await fetch(api('state'))).text()).trim());
+    const disk = () => fs.readFileSync(cfgFile(), 'utf8');
+    fs.writeFileSync(cfgFile(), JSON.stringify(fixture(), null, 2));
+    fs.rmSync(path.join(dataDir(), 'record.json'), { force: true });
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    assert.equal((await state()).enabled, true);
+    assert.match(await text('#wltm-status'), /Plugin enabled/);
+    // an Apply restarts fppd but is not a boot: still enabled afterwards
+    await page.evaluate(() => { window.WLTMUI._state.record.draft[0].outputs[0].virtualStrings[0].description = 'Eave'; });
+    await tab('colour'); await tab('ports');
+    await act('apply');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    assert.equal((await state()).enabled, true, 'fppd restart is not a reboot');
+    // the page is open and the controller reboots: the next write is refused and the page switches itself off
+    fs.writeFileSync(bootFile, 'boot-2\n');
+    await page.evaluate(() => { window.WLTMUI._state.record.draft[0].outputs[0].virtualStrings[0].description = 'Gable'; });
+    await tab('colour'); await tab('ports');
+    const before = disk();
+    await act('apply');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    assert.equal(disk(), before, 'nothing was written');
+    assert.match(await text('#wltm-status'), /Plugin DISABLED/);
+    // reloading after the reboot: off, lights and writes blocked in the page and in the backend
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    assert.equal((await state()).enabled, false);
+    assert.match(await text('#wltm-status'), /Plugin DISABLED/);
+    assert.match(await text('#wltm-status'), /switched off/);
+    for (const a of ['light', 'blink', 'chase', 'identify-all', 'apply']) assert.equal(await page.locator('#wltm [data-act="' + a + '"]').first().isDisabled().catch(() => true), true, a + ' is disabled');
+    const [c1, r1] = await post('apply', { expectHash: 'x', configText: JSON.stringify(fixture()) });
+    assert.equal(c1, 403); assert.equal(r1.disabled, true);
+    assert.equal((await post('restore', { name: 'co-bbbStrings-20200101-000000.json' }))[0], 403);
+    assert.equal(disk(), before);
+    const n = requests().length;
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+    assert.equal(requests().length, n, 'nothing is sent to the lights while it is off');
+    // looking around still works
+    await tab('count'); await tab('colour'); await tab('record'); await tab('ports');
+    // switch on again: enabled for this boot only, and it survives a reload
+    await act('toggle-enabled');
+    assert.match(await text('#wltm-status'), /Plugin enabled/);
+    assert.equal((await state()).enabled, true);
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    assert.match(await text('#wltm-status'), /Plugin enabled/);
+    // and switching it off by hand sticks too
+    await act('toggle-enabled');
+    assert.equal((await state()).enabled, false);
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    assert.match(await text('#wltm-status'), /Plugin DISABLED/);
+    await act('toggle-enabled');
+    assert.equal((await state()).enabled, true);
+    // an unreadable boot id never switches the plugin on
+    fs.writeFileSync(bootFile, '');
+    assert.equal((await state()).enabled, false);
+    assert.equal((await post('setEnabled', { enabled: true }))[0], 500);
+    fs.writeFileSync(bootFile, 'boot-2\n');
+    assert.equal((await state()).enabled, true, 'same boot again: still on');
+    assert.equal((await post('setEnabled', { enabled: 'yes' }))[0], 400);
 });
 
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {

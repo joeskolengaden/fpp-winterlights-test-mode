@@ -26,12 +26,22 @@ The plugin is plain PHP and JavaScript. It does not patch or rebuild FPP. Open i
 | **Colour order** | Send one colour at a time (red, green, blue, and white on RGBW strings) to all ports or to the ports you tick (**Chosen ports**: one box per port and per subport, and a port's own box ticks or unticks all its subports; the lights follow the ticks), and click the colour each string actually shows. Strings with the same result are grouped; each group's colour order can be changed with one button and verified afterwards. |
 | **Record** | The saved result for every string (count, detected order, verified, dates), CSV export, and the configuration backups with a Restore button. |
 
-### Master switch
+### Master switch (off after every restart)
 
-The **Test mode enabled / DISABLED** switch at the top of the page turns all testing on or off. Switching it off
-turns every light off at once and disables every light, colour, count and identify button (and the arrow keys)
-until you switch it back on. Renaming, saved results and Apply keep working while it is off. It always starts
-enabled when the page is opened.
+The **Plugin enabled / DISABLED** switch at the top of the page is kept on the controller **for one boot only**. After the
+BeagleBone reboots or loses power the plugin is **off until you switch it on again**. A restart of fppd alone (which
+Apply does) is not a boot, so it stays on. A fresh install also starts off.
+
+While it is off:
+- nothing can be lit: every light, colour, count, chase and identify button and the arrow keys are disabled, and any
+  light that was on is turned off;
+- nothing is written to FPP: **Apply** (all of them) and **Restore** are blocked in the page and refused by the plugin's
+  backend, so a stale page left open across a reboot cannot write either;
+- you can still look around, rename, stage changes and read the record.
+
+Switching it off by hand does the same. It is stored in
+`/home/fpp/media/config/winterlights-test-mode/enabled.json` together with the controller's boot id
+(`/proc/sys/kernel/random/boot_id`). If the boot id cannot be read the plugin stays off rather than guess.
 
 ### Changes wait until you apply them
 
@@ -87,6 +97,7 @@ marked verified.
 | --- | --- |
 | `/home/fpp/media/config/co-bbbStrings.json` | FPP's own file. Written only by Apply and Restore. |
 | `/home/fpp/media/config/winterlights-test-mode/record.json` | Test results and the changes that are waiting. |
+| `/home/fpp/media/config/winterlights-test-mode/enabled.json` | Which boot the plugin was switched on for (it is off again after a reboot). |
 | `/home/fpp/media/config/winterlights-test-mode/tags.json` | Your description tags. Starts as: Lip, driver side eye, cleaner side eye, top grill, main grill, bottom grill, top light, u bar centre, u bar driver side beam, u bar cleaner side beam, eye, eyebrow. **✎ Edit tags** in the Count tab adds, removes and reorders them; "Reset to the standard list" restores that list. |
 | `/home/fpp/media/config/winterlights-test-mode/backups/` | The newest 30 configuration backups. |
 

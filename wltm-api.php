@@ -25,6 +25,28 @@ function wltm_data_dir() { return wltm_config_dir() . '/winterlights-test-mode';
 function wltm_backup_dir() { return wltm_data_dir() . '/backups'; }
 function wltm_record_file() { return wltm_data_dir() . '/record.json'; }
 function wltm_tags_file() { return wltm_data_dir() . '/tags.json'; }
+function wltm_enabled_file() { return wltm_data_dir() . '/enabled.json'; }
+
+/* The plugin is switched on for ONE boot of the controller. The Linux boot id changes on every boot, so after a reboot or
+   power cut the stored id no longer matches and the plugin is off until the user switches it on again. (A restart of
+   fppd alone is not a boot, so Apply does not switch it off.) WLTM_BOOT_ID_FILE lets the tests play a reboot. */
+function wltm_boot_id() {
+    $f = getenv('WLTM_BOOT_ID_FILE');
+    if ($f === false || $f === '') $f = '/proc/sys/kernel/random/boot_id';
+    $t = @file_get_contents($f);
+    return $t === false ? '' : trim($t);
+}
+function wltm_is_enabled() {
+    $boot = wltm_boot_id();
+    if ($boot === '') return false;                      // cannot tell which boot this is: stay off rather than guess
+    $f = wltm_enabled_file();
+    if (!file_exists($f)) return false;
+    $d = json_decode((string)@file_get_contents($f), true);
+    return is_array($d) && isset($d['bootId']) && $d['bootId'] === $boot;
+}
+function wltm_require_enabled() {
+    if (!wltm_is_enabled()) wltm_out(array('ok' => false, 'disabled' => true, 'error' => 'The plugin is switched off. It is off after every reboot until you switch it on with the switch at the top of the page.'), 403);
+}
 
 function wltm_out($data, $code = 200) {
     while (ob_get_level() > 0) { @ob_end_clean(); }
@@ -134,6 +156,7 @@ if ($wltmAction === 'state') {
         'liveHash' => $liveText === false ? '' : md5($liveText),
         'recordText' => $recText === false ? '' : $recText,
         'tagsText' => $tagText === false ? '' : $tagText,
+        'enabled' => wltm_is_enabled(),
         'backups' => wltm_backups(),
         'configFile' => $file
     ));
@@ -148,6 +171,21 @@ if ($wltmAction === 'saveRecord') {
     wltm_ensure_dirs();
     if (!wltm_write_atomic(wltm_record_file(), $text)) wltm_fail('Cannot write the record file.', 500);
     wltm_out(array('ok' => true));
+}
+
+if ($wltmAction === 'setEnabled') {
+    wltm_require_post();
+    $d = json_decode(wltm_body(), true);
+    if (!is_array($d) || !isset($d['enabled']) || !is_bool($d['enabled'])) wltm_fail('Bad request.');
+    wltm_ensure_dirs();
+    if ($d['enabled']) {
+        $boot = wltm_boot_id();
+        if ($boot === '') wltm_fail('Cannot tell which boot this is, so the plugin cannot be switched on.', 500);
+        if (!wltm_write_atomic(wltm_enabled_file(), json_encode(array('version' => 1, 'bootId' => $boot, 'at' => date('c'))))) wltm_fail('Cannot write the switch.', 500);
+    } else {
+        @unlink(wltm_enabled_file());
+    }
+    wltm_out(array('ok' => true, 'enabled' => wltm_is_enabled()));
 }
 
 /* The description tags offered in the Count tab: a list of short strings kept in <config>/winterlights-test-mode/tags.json */
@@ -167,6 +205,7 @@ if ($wltmAction === 'saveTags') {
 
 if ($wltmAction === 'apply') {
     wltm_require_post();
+    wltm_require_enabled();
     $req = json_decode(wltm_body(), true);
     if (!is_array($req) || !isset($req['configText']) || !is_string($req['configText']) || !isset($req['expectHash'])) wltm_fail('Bad request.');
     $text = $req['configText'];
@@ -186,6 +225,7 @@ if ($wltmAction === 'apply') {
 
 if ($wltmAction === 'restore') {
     wltm_require_post();
+    wltm_require_enabled();
     $req = json_decode(wltm_body(), true);
     $name = is_array($req) && isset($req['name']) ? (string)$req['name'] : '';
     if (!in_array($name, wltm_backups(), true)) wltm_fail('That backup does not exist.');

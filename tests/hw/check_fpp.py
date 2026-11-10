@@ -110,7 +110,9 @@ def main():
     code, _, body = get(base, plug("apply"))
     say(code == 405, "api: apply refuses GET", str(code))
     code, _, body = get(base, plug("apply"), json.dumps({"expectHash": "x", "configText": "[]"}))
-    say(code == 400, "api: apply refuses a bad config", "%s %s" % (code, body[:100].strip()))
+    enabled = d.get("enabled")
+    print("      plugin switch: %s (it is off after every reboot until switched on in the page)" % ("ON" if enabled else "OFF"))
+    say(code == (400 if enabled else 403), "api: apply refuses a bad config" if enabled else "api: apply is blocked while the plugin is switched off", "%s %s" % (code, body[:100].strip()))
 
     code, _, body = get(base, "/api/testmode")
     print("      GET /api/testmode -> %s %s" % (code, body[:200].strip().replace("\n", " ")))
@@ -136,7 +138,9 @@ def main():
         print("      status after: %s" % (json.loads(body).get("status_name") if code == 200 else code))
         print("      (did channels 1-3 of port 1 light red briefly? that is the one thing this script cannot see)")
 
-    if a.roundtrip and live is not None:
+    if a.roundtrip and not d.get("enabled"):
+        print("WARN  --roundtrip skipped: the plugin is switched off. Switch it on in the page first.")
+    if a.roundtrip and live is not None and d.get("enabled"):
         text = d["liveText"]
         h = d["liveHash"]
         code, _, body = get(base, plug("apply"), json.dumps({"expectHash": h, "configText": text}))

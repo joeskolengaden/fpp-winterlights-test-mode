@@ -16,7 +16,7 @@
         backups: [],
         tab: 'ports', sel: '',
         brightness: 30,
-        enabled: true,                  // master switch: when false nothing can be lit
+        enabled: false,                 // master switch, kept on the controller for ONE boot: off after every reboot until switched on. When false nothing can be lit and nothing is written to FPP
         fppd: { known: false, running: false, status: '', mode: '' },
         lit: { label: '', note: '' },
         ident: { colour: 'W', speed: 'normal' },
@@ -58,7 +58,10 @@
         var opt = body === undefined ? { method: 'GET', cache: 'no-store' } : { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body), cache: 'no-store' };
         return fetch(apiUrl(action), opt).then(function (r) { return r.text(); }).then(function (t) {
             var d = parseLoose(t);
-            if (!d.ok) throw new Error(d.error || 'Request failed.');
+            if (!d.ok) {
+                if (d.disabled) S.enabled = false;           // the controller rebooted (or the plugin was switched off elsewhere)
+                throw new Error(d.error || 'Request failed.');
+            }
             return d;
         });
     }
@@ -118,6 +121,7 @@
     }
 
     function adoptState(d) {
+        S.enabled = d.enabled === true;
         S.backups = d.backups || [];
         S.liveHash = d.liveHash || '';
         S.liveRoot = null; S.liveOutputs = [];
@@ -621,6 +625,7 @@
     async function applyToFpp() {
         var d = diffs();
         if (!d.length) return;
+        if (!S.enabled) { toast('The plugin is switched off. Switch it on first.', true); return; }
         if (!window.confirm('Write ' + d.length + ' change' + (d.length === 1 ? '' : 's') + ' to FPP\'s Pixel Strings configuration and restart fppd?\n\nA backup is saved first. The lights go dark for a few seconds during the restart.')) return;
         try {
             await allOff();
@@ -657,6 +662,7 @@
     async function applyPage() {
         var k = pageKind(), plan = pagePlan();
         if (!plan || !plan.changes.length) return;
+        if (!S.enabled) { toast('The plugin is switched off. Switch it on first.', true); return; }
         var all = diffs().length, rest = all - plan.changes.length;
         var msg = 'Write ' + plan.changes.length + ' ' + C.PAGE_KINDS[k] + ' change' + (plan.changes.length === 1 ? '' : 's') + ' to FPP\'s Pixel Strings configuration and restart fppd?\n\n' +
             plan.changes.slice(0, 8).map(function (c) { return c.label + ': ' + c.text; }).join('\n') + (plan.changes.length > 8 ? '\n…and ' + (plan.changes.length - 8) + ' more' : '') +
@@ -688,6 +694,7 @@
     }
 
     async function restoreBackup(name) {
+        if (!S.enabled) { toast('The plugin is switched off. Switch it on first.', true); return; }
         if (!window.confirm('Restore ' + name + ' as FPP\'s Pixel Strings configuration and restart fppd?\n\nThe current configuration is backed up first. Changes waiting on this page are dropped.')) return;
         try {
             await allOff();
@@ -741,17 +748,26 @@
     function btn(act, text, cls, attrs) { return '<button type="button" class="wltm-btn ' + (cls || '') + '" data-act="' + act + '"' + (attrs || '') + '>' + text + '</button>'; }
 
     var LIGHT_ACTS = ['light', 'blink', 'chase', 'first', 'identify-all', 'count-step', 'count-first', 'count-half', 'count-end', 'send', 'group-light', 'group-verify'];
+    var WRITE_ACTS = ['apply', 'apply-page', 'restore'];
     function applyDisabled() {
         if (!root || S.enabled) return;
-        LIGHT_ACTS.forEach(function (a) {
-            Array.prototype.forEach.call(root.querySelectorAll('[data-act="' + a + '"]'), function (b) { b.disabled = true; b.title = 'Test mode is disabled. Turn it on with the switch at the top.'; });
+        LIGHT_ACTS.concat(WRITE_ACTS).forEach(function (a) {
+            Array.prototype.forEach.call(root.querySelectorAll('[data-act="' + a + '"]'), function (b) { b.disabled = true; b.title = 'The plugin is switched off. Turn it on with the switch at the top.'; });
         });
     }
-    function setEnabled(on) {
-        S.enabled = !!on;
-        if (!on) { stopBlink(); S.colour.current = ''; S.verify = null; S.count.started = false; allOff(); }
+    async function setEnabled(on) {
+        on = !!on;
+        if (!on) { stopBlink(); S.colour.current = ''; S.verify = null; S.count.started = false; await allOff(); }
+        try {
+            var d = await call('setEnabled', { enabled: on });
+            S.enabled = d.enabled === true;
+        } catch (e) {
+            toast('Could not change the switch: ' + e.message, true);
+            render();
+            return;
+        }
         render();
-        toast(on ? 'Test mode enabled.' : 'Test mode disabled. All lights are off and nothing can be lit until you enable it again.');
+        toast(S.enabled ? 'Plugin enabled until the controller is next restarted.' : 'Plugin switched off. All lights are off, nothing can be lit and nothing is written to FPP until you switch it on again.');
     }
 
     function renderStatus() {
@@ -760,7 +776,7 @@
         var act = document.activeElement;
         if (act && act.id === 'wltm-bright' && el.contains(act) && el.querySelector('.wltm-strip')) return;   // do not rebuild the slider mid-drag
         var h = '';
-        h += '<button type="button" class="wltm-master ' + (S.enabled ? 'on' : 'off') + '" data-act="toggle-enabled" role="switch" aria-checked="' + (S.enabled ? 'true' : 'false') + '" title="Master switch for all testing"><span class="knob"></span><span class="lbl">' + (S.enabled ? 'Test mode enabled' : 'Test mode DISABLED') + '</span></button>';
+        h += '<button type="button" class="wltm-master ' + (S.enabled ? 'on' : 'off') + '" data-act="toggle-enabled" role="switch" aria-checked="' + (S.enabled ? 'true' : 'false') + '" title="Master switch. The plugin switches itself off whenever the controller restarts."><span class="knob"></span><span class="lbl">' + (S.enabled ? 'Plugin enabled' : 'Plugin DISABLED · click to enable') + '</span></button>';
         h += !S.enabled ? pill('warn', 'Nothing can be lit') : (S.lit.label ? pill('on', 'LIGHTS ON') : pill('grey', 'Lights off'));
         if (S.fppd.known) h += S.fppd.running ? pill('ok', 'fppd running') : pill('warn', 'fppd not running');
         var rows = C.listRows(S.liveOutputs), ports = {}, n = 0;
@@ -778,7 +794,7 @@
         }
         var off = S.liveOutputs.filter(function (co) { return co && co.type === 'BBB48String' && co.enabled === 0; }).length;
         if (off) warn += '<div class="wltm-note bad">The BeagleBone pixel-string output is disabled in FPP, so the lights will not respond. Enable it on the Pixel Strings page.</div>';
-        if (!S.enabled) warn += '<div class="wltm-note">Test mode is disabled, so no light, colour or counting button will light anything. Renaming, saved results and Apply still work. Use the switch above to enable it.</div>';
+        if (!S.enabled) warn += '<div class="wltm-note bad">The plugin is switched off. It is off after every restart of the controller until you switch it on with the switch above. While it is off nothing can be lit and nothing is written to FPP (Apply and Restore are blocked). You can still look around, rename and stage changes.</div>';
         if (S.lit.note) warn += '<div class="wltm-note">' + esc(S.lit.note) + '</div>';
         if (S.notice) warn += '<div class="wltm-note">' + esc(S.notice) + ' ' + btn('dismiss-notice', 'OK', 'sm') + '</div>';
         el.innerHTML = '<div class="wltm-strip">' + h + '</div>' + warn;
