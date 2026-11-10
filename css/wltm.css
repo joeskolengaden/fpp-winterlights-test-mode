@@ -122,3 +122,7 @@
 #wltm .wltm-master .knob{width:20px;height:20px;border-radius:50%;background:#1f8a4c;display:inline-block;margin-left:0}
 #wltm .wltm-master.off{border-color:#a32a20;background:#fdecea;color:#8f231a;flex-direction:row-reverse;padding:3px 4px 3px 12px}
 #wltm .wltm-master.off .knob{background:#a32a20}
+
+/* note box in the Count tab */
+.wltm-card-in { border-top: 1px dashed rgba(128,128,128,.4); padding-top: 10px; }
+.wltm-card-in input[type=text] { box-sizing: border-box; }

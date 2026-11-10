@@ -342,6 +342,31 @@
         return String(s == null ? '' : s).replace(/["'\\<>&\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     }
 
+    /* A description is "<generated name>" or "<generated name> | <note>". The note says what the LEDs show, which prop
+       and which way the string runs. FPP keeps one description field (60 characters), so the note rides on its tail. */
+    var NOTE_SEP = ' | ';
+    var DESC_MAX = 60;
+    function descBase(desc) {
+        var d = String(desc == null ? '' : desc), i = d.indexOf(NOTE_SEP);
+        return (i < 0 ? d : d.slice(0, i)).trim();
+    }
+    function descNote(desc) {
+        var d = String(desc == null ? '' : desc), i = d.indexOf(NOTE_SEP);
+        return i < 0 ? '' : d.slice(i + NOTE_SEP.length).trim();
+    }
+    /* How many characters of note fit after this base name. */
+    function noteRoom(desc) { return Math.max(0, DESC_MAX - descBase(desc).length - NOTE_SEP.length); }
+    /* The description with its note replaced (an empty note removes it). The generated name is never changed; a note
+       longer than the room is cut and `cut` says so. */
+    function withNote(desc, note) {
+        var base = descBase(desc);
+        var n = cleanDescription(note).replace(/\s*\|\s*/g, ' ').trim();
+        if (!n) return { text: base, cut: false, note: '' };
+        var room = noteRoom(desc), cut = n.length > room;
+        n = n.slice(0, room).trim();
+        return { text: n ? base + NOTE_SEP + n : base, cut: cut, note: n };
+    }
+
     /* Rename a string or an empty port/subport. */
     function renameRow(draft, row, name) {
         name = cleanDescription(name);
@@ -451,7 +476,7 @@
         second._uid = newUid();
         second.pixelCount = n - at;
         second.nullNodes = 0;
-        second.description = cleanDescription((vs.description || rowLabel(r)) + ' part 2');
+        second.description = cleanDescription((descBase(vs.description) || rowLabel(r)) + ' part 2');      // the note belongs to the first part
         vs.pixelCount = at;
         vs.endNulls = 0;
         if (toInt(vs.reverse, 0) === 1) {
@@ -710,7 +735,7 @@
         orderInfo: orderInfo, inputOffset: inputOffset, testColours: testColours, allowedOrders: allowedOrders, detectOrder: detectOrder,
         subportCount: subportCount, defaultVs: defaultVs, dataPixels: dataPixels, listRows: listRows, rowLabel: rowLabel,
         makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft,
-        cleanDescription: cleanDescription, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
+        cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
         findByUid: findByUid, removeNewString: removeNewString, removeSubport: removeSubport, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
         pixelChannel: pixelChannel, mergeRanges: mergeRanges, setString: setString, pixelRanges: pixelRanges,
         emptyFrame: emptyFrame, solidFrame: solidFrame, colourFrame: colourFrame, frameRequest: frameRequest, identifyAllFrame: identifyAllFrame,

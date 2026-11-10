@@ -22,7 +22,7 @@ The plugin is plain PHP and JavaScript. It does not patch or rebuild FPP. Open i
 | Tab | What you do there |
 | --- | --- |
 | **Ports & identify** | See every port and subport from the Pixel Strings config. Light one string, blink it, or light only its first pixel. "Identify all ports" lights as many pixels as the port number on every port at once. Rename ports and subports, add a string to a port or subport. |
-| **Count LEDs** | Step a single lit pixel (±1, ±10, ±50, arrow keys) until it sits on the last real LED, then save the count. "Split here" turns the pixels after the lit one into a new string on the same port. |
+| **Count LEDs** | Step a single lit pixel (±1, ±10, ±50, arrow keys) until it sits on the last real LED, then save the count. "Split here" turns the pixels after the lit one into a new string on the same port. Type a **note** in the box under the strip (what the LEDs show, which prop, which direction; the chips add common words) and it is added to the end of the generated description as `port 9 A \| Front roofline, left to right`. The generated name is never changed, saving again replaces only the note, and the whole description stays within FPP's 60 characters. On a split the note stays with the counted part and the new part is named after the generated name only. |
 | **Colour order** | Send one colour at a time (red, green, blue, and white on RGBW strings) to all ports or to one port, and click the colour each string actually shows. Strings with the same result are grouped; each group's colour order can be changed with one button and verified afterwards. |
 | **Record** | The saved result for every string (count, detected order, verified, dates), CSV export, and the configuration backups with a Restore button. |
 

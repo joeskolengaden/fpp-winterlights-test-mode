@@ -20,7 +20,7 @@
         fppd: { known: false, running: false, status: '', mode: '' },
         lit: { label: '', note: '' },
         ident: { colour: 'W' },
-        count: { pos: {}, started: false, save: '' },
+        count: { pos: {}, started: false, save: '', note: {} },
         colour: { scope: 'all', current: '', choice: {} },
         verify: null,
         edit: null,                     // { key } row being renamed
@@ -244,6 +244,7 @@
         show(f, 'Identify all ports');
     }
 
+    var NOTE_CHIPS = ['left to right', 'right to left', 'bottom to top', 'top to bottom', 'clockwise', 'anticlockwise', 'outline', 'roofline', 'tree', 'arch', 'window', 'fence'];
     function countMax(row) { return row && !row.empty ? C.countLimit(S.record.draft, row.vs, S.lidx) : 0; }
     function countPos(row) {
         var max = countMax(row);
@@ -263,28 +264,43 @@
         show(C.solidFrame([{ live: l.vs, from: l.off + pos - 1, count: 1 }]), C.rowLabel(r) + ' · pixel ' + pos);
         render();
     }
+    /* The note typed in the Count tab for this string, or undefined when nothing was typed (then the description is left alone). */
+    function countNote(r) {
+        var inp = root.querySelector('#wltm-count-note');
+        if (inp) S.count.note[r.vs._uid] = inp.value;
+        return S.count.note[r.vs._uid];
+    }
+    function applyNote(r, note) {
+        var res = C.withNote(r.vs.description, note);
+        C.renameRow(S.record.draft, r, res.text);
+        return res;
+    }
     function countSave() {
         var r = selRow(); if (!r) return;
         var inp = root.querySelector('#wltm-count-save');
         var n = C.toInt(inp ? inp.value : countPos(r), 0);
+        var note = countNote(r);
         var res = C.setPixelCount(S.record.draft, r.vs._uid, n);
         if (!res.ok) { toast(res.error, true); return; }
+        var nr = note !== undefined ? applyNote(r, note) : null;
         var m = meta(r.vs._uid);
         m.counted = n; m.countedAt = nowIso();
-        delete S.count.pos[r.vs._uid];
+        delete S.count.pos[r.vs._uid]; delete S.count.note[r.vs._uid];
         saveRecord();
-        toast(C.rowLabel(r) + ': count ' + n + ' saved.');
+        toast(C.rowLabel(r) + ': count ' + n + ' saved' + (nr && nr.note ? ' with the note.' : '.') + (nr && nr.cut ? ' The note was shortened to fit FPP\'s 60-character description.' : ''), !!(nr && nr.cut));
         render();
     }
     function countSplit() {
         var r = selRow(); if (!r) return;
         var pos = countPos(r);
         if (!window.confirm('Split ' + C.rowLabel(r) + ' after pixel ' + pos + '?\n\nPixels 1–' + pos + ' stay as this string and the rest becomes a new string on the same port. The lights keep the same channels.')) return;
+        var note = countNote(r);
         var res = C.splitString(S.record.draft, r.vs._uid, pos);
         if (!res.ok) { toast(res.error, true); return; }
+        if (note !== undefined) applyNote(r, note);                          // the note describes the part that was counted; the new part starts without one
         var m = meta(r.vs._uid);
         m.counted = pos; m.countedAt = nowIso();
-        delete S.count.pos[r.vs._uid];
+        delete S.count.pos[r.vs._uid]; delete S.count.note[r.vs._uid];
         saveRecord();
         toast('Split done. The new string is selected below it in the list.');
         render();
@@ -507,7 +523,7 @@
             S.lidx = C.liveIndex(S.liveOutputs);
             C.rebaseDraft(S.record.draft);
             S.record.baseHash = S.liveHash;
-            S.count.pos = {};
+            S.count.pos = {}; S.count.note = {};
             saveRecord();
             await flushRecord();
             var ok = await restartFppd();
@@ -725,6 +741,12 @@
             h += '<div class="wltm-pixels">';
             for (var p = from; p <= to; p++) h += '<span class="px' + (started && p === pos ? ' lit' : (started && p > pos ? ' end' : '')) + '"></span>';
             h += '</div><div class="wltm-cap">Pixels ' + from + '–' + to + ' · ring = lit now, dashed = configured but after the lit pixel</div>';
+            var typed = S.count.note[r.vs._uid], base = C.descBase(r.vs.description), room = C.noteRoom(r.vs.description);
+            var curNote = typed !== undefined ? typed : C.descNote(r.vs.description);
+            h += '<div class="wltm-card-in" style="margin-top:14px"><div class="wltm-cap">Description <b class="wltm-mono">' + esc(base || '(no name)') + '</b> <span class="wltm-muted">+ your note, added to the end:</span></div>';
+            h += '<div class="wltm-row"><input type="text" id="wltm-count-note" maxlength="' + room + '"' + (room ? '' : ' disabled') + ' placeholder="what the LEDs show · which prop · which direction, e.g. Front roofline, left to right" value="' + esc(curNote) + '" style="width:min(520px,100%)"></div>';
+            h += '<div class="wltm-row" style="margin-top:6px">' + NOTE_CHIPS.map(function (c) { return btn('note-chip', c, 'sm', ' data-chip="' + esc(c) + '"'); }).join('') + '</div>';
+            h += '<div class="wltm-cap" style="margin-top:6px">FPP will show: <span class="wltm-mono" id="wltm-count-preview">' + esc(C.withNote(r.vs.description, curNote).text) + '</span> <span class="wltm-muted" id="wltm-count-room">(' + room + ' characters left)</span>' + (room ? '' : ' <b>The generated name already uses all 60 characters, so there is no room for a note. Shorten the name with ✎ first.</b>') + '</div></div>';
             if (started) {
                 h += '<div class="wltm-row" style="margin-top:14px"><label>Pixel count to save <input type="number" id="wltm-count-save" min="1" max="' + C.MAX_PIXELS_PER_STRING + '" value="' + esc(S.count.save || pos) + '" style="width:90px"></label>' + btn('count-save', 'Last LED is lit · save count', 'green') + btn('count-split', 'Split here · pixels after ' + pos + ' become a new string', '', pos >= max ? ' disabled' : '') + '</div>';
                 h += '<div class="wltm-cap" style="margin-top:6px">Nothing lit? Step back until a pixel lights.</div>';
@@ -959,6 +981,15 @@
             case 'count-first': countGo(1); break;
             case 'count-half': if (countMax(selRow())) countGo(Math.ceil(countMax(selRow()) / 2)); break;
             case 'count-end': if (countMax(selRow())) countGo(countMax(selRow())); break;
+            case 'note-chip': {
+                var r0 = selRow(), inp0 = root.querySelector('#wltm-count-note');
+                if (r0 && inp0 && !inp0.disabled) {
+                    var chip = t.getAttribute('data-chip'), cur = inp0.value.trim();
+                    inp0.value = cur ? (/[,;]$/.test(cur) ? cur + ' ' : cur + ', ') + chip : chip;
+                    S.count.note[r0.vs._uid] = inp0.value; notePreview(r0); inp0.focus();
+                }
+                break;
+            }
             case 'count-save': countSave(); break;
             case 'count-split': countSplit(); break;
             case 'scope': if (S.colour.scope !== t.getAttribute('data-s')) { allOff(); S.colour.scope = t.getAttribute('data-s'); } render(); break;
@@ -980,11 +1011,19 @@
         }
     }
 
+    function notePreview(r) {
+        var res = C.withNote(r.vs.description, S.count.note[r.vs._uid]);
+        var pv = root.querySelector('#wltm-count-preview'), rm = root.querySelector('#wltm-count-room');
+        if (pv) pv.textContent = res.text;
+        if (rm) rm.textContent = '(' + Math.max(0, C.noteRoom(r.vs.description) - res.note.length) + ' characters left)';
+    }
+
     function onChange(ev) {
         var t = ev.target;
         if (t.id === 'wltm-bright') { S.brightness = C.toInt(t.value, 30); var v = root.querySelector('#wltm-bright-val'); if (v) v.textContent = S.brightness + '%'; reshow(); }
         else if (t.id === 'wltm-colour-sel') { allOff(); S.sel = t.value; render(); }
         else if (t.id === 'wltm-count-save') { S.count.save = t.value; }
+        else if (t.id === 'wltm-count-note') { var cr = selRow(); if (cr) { S.count.note[cr.vs._uid] = t.value; notePreview(cr); } }
         else if (t.getAttribute && t.getAttribute('data-change') === 'group-choice') { S.colour.choice[t.getAttribute('data-order')] = t.value; render(); }
     }
 
@@ -1022,7 +1061,7 @@
         S.version = el.getAttribute('data-version') || '';
         root.addEventListener('click', onClick);
         root.addEventListener('change', onChange);
-        root.addEventListener('input', function (ev) { if (ev.target.id === 'wltm-bright' || ev.target.id === 'wltm-count-save') onChange(ev); });
+        root.addEventListener('input', function (ev) { if (ev.target.id === 'wltm-bright' || ev.target.id === 'wltm-count-save' || ev.target.id === 'wltm-count-note') onChange(ev); });
         document.addEventListener('keydown', onKey);
         window.addEventListener('pagehide', onLeave);
         window.addEventListener('beforeunload', onLeave);

@@ -503,6 +503,59 @@ test('warnings: playlist running, fppd down; loader works when FPP does not add 
     assert.equal(await page.locator('#wltm .wltm-tab.on').evaluate(e => getComputedStyle(e).fontWeight), '600');
 });
 
+test('count tab: a note typed while counting is added to the end of the description and saved with the count', async () => {
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    await tab('count');
+    const first = page.locator('#wltm tr.pick').first();
+    const desc0 = (await first.locator('td').nth(2).innerText()).replace('✎', '').trim();
+    const base = C.descBase(desc0);
+    await first.locator('td').nth(3).click();
+    await settle();
+    assert.match(await text('#wltm-count-preview'), new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    await act('count-end');
+    await act('count-step', '[data-d="-1"]');
+    await page.fill('#wltm-count-note', 'Front roofline "left"');
+    await act('count-step', '[data-d="-1"]');                          // the page re-renders; the typed note must survive
+    assert.equal(await page.inputValue('#wltm-count-note'), 'Front roofline "left"');
+    await page.click('#wltm [data-act="note-chip"][data-chip="left to right"]');
+    assert.equal(await page.inputValue('#wltm-count-note'), 'Front roofline "left", left to right');
+    assert.equal(await text('#wltm-count-preview'), base + ' | Front roofline left, left to right');
+    await shot('02b-count-note');
+    await act('count-save');
+    const t = await text('#wltm .wltm-table');
+    assert.ok(t.includes(base + ' | Front roofline left, left to right'), 'the list shows generated name + note');
+    assert.ok((await text('#wltm .wltm-foot')).includes('renamed to "' + base + ' | Front roofline left, left to right"'));
+    // saving again with a different note replaces the note and keeps the generated name
+    await act('count-end');
+    await act('count-step', '[data-d="-1"]');
+    assert.equal(await page.inputValue('#wltm-count-note'), 'Front roofline left, left to right', 'the field starts with the saved note');
+    await page.fill('#wltm-count-note', 'Garage arch, bottom to top');
+    await act('count-save');
+    assert.ok((await text('#wltm .wltm-table')).includes(base + ' | Garage arch, bottom to top'));
+    assert.ok(!(await text('#wltm .wltm-table')).includes('Front roofline'));
+    // a note typed before a split stays with the counted part; the new part is named after the generated name
+    await act('count-end');
+    await act('count-step', '[data-d="-10"]');
+    await page.fill('#wltm-count-note', 'Gate, outline');
+    await act('count-split');
+    const t2 = await text('#wltm .wltm-table');
+    assert.ok(t2.includes(base + ' | Gate, outline'));
+    assert.ok(t2.includes(base + ' part 2'));
+    assert.ok(!t2.includes(base + ' | Gate, outline part 2'));
+    // a long note is cut to FPP's 60 characters and the page says so
+    await act('count-end');
+    await act('count-step', '[data-d="-1"]');
+    await page.evaluate(() => { const i = document.querySelector('#wltm-count-note'); i.maxLength = 500; });
+    await page.fill('#wltm-count-note', 'z'.repeat(100));
+    await act('count-save');
+    const full = await page.evaluate(() => window.WLTMUI._state.record.draft[0].outputs.flatMap(o => o.virtualStrings || []).map(v => v.description));
+    assert.ok(full.every(d => d.length <= 60), 'no description is longer than 60 characters');
+    await act('discard');
+    assert.ok(!(await text('#wltm .wltm-table')).includes('Garage arch'));
+});
+
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {
     const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
     const before = fs.readFileSync(cfgFile(), 'utf8');

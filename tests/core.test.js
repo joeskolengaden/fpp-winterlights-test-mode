@@ -412,3 +412,30 @@ test('FPP\'s plugin endpoint loader runs through this plugin untouched', () => {
         fs.rmSync(base, { recursive: true, force: true });
     }
 });
+
+test('description notes: the generated name is kept, the note rides on its tail, 60 characters in all', () => {
+    assert.equal(C.descBase('port 9 A'), 'port 9 A');
+    assert.equal(C.descNote('port 9 A'), '');
+    assert.equal(C.descBase('port 9 A | Front roofline, left to right'), 'port 9 A');
+    assert.equal(C.descNote('port 9 A | Front roofline, left to right'), 'Front roofline, left to right');
+    assert.equal(C.withNote('port 9 A', 'Front roofline, left to right').text, 'port 9 A | Front roofline, left to right');
+    // replacing and removing a note never touches the generated name
+    assert.equal(C.withNote('port 9 A | old', 'new').text, 'port 9 A | new');
+    assert.equal(C.withNote('port 9 A | old', '   ').text, 'port 9 A');
+    // quotes/brackets are stripped as for every description, a typed pipe cannot start a second note
+    assert.equal(C.withNote('p1', 'a "b" <c> | d').text, 'p1 | a b c d');
+    // too long: cut to the room left, and it says so
+    const long = 'x'.repeat(80), r = C.withNote('port 12', long);
+    assert.equal(r.text.length, 60);
+    assert.equal(r.cut, true);
+    assert.equal(C.noteRoom('port 12'), 60 - 'port 12'.length - 3);
+    // a name that already fills the line leaves no room
+    assert.equal(C.noteRoom('y'.repeat(58)), 0);
+    assert.equal(C.withNote('y'.repeat(58), 'note').text, 'y'.repeat(58));
+    // a split names the new part after the generated name only; the note stays with the first part
+    const l = cfg(); l[0].outputs[0].virtualStrings[0].description = 'Roof | left to right';
+    const d = C.makeDraft(l), u = d[0].outputs[0].virtualStrings[0]._uid;
+    assert.ok(C.splitString(d, 0 === 0 ? u : u, 20).ok);
+    const names = d[0].outputs[0].virtualStrings.map(v => v.description);
+    assert.deepEqual(names, ['Roof | left to right', 'Roof part 2']);
+});
