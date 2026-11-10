@@ -66,6 +66,7 @@ marked verified.
 - **5/6-channel and 16-bit chips** (orders added by the Pixel IC Support plugin): red, green and blue are tested;
   the extra white channels are not.
 - **Renaming a string renames its automatic pixel overlay model**, because FPP names those after the description.
+- **Deleting a subport:** the trash button deletes the last subport of a port (B, C, ...) together with its strings and lowers the port's receiver count by one. FPP numbers subports by position, so a subport in the middle cannot be deleted; delete the later ones first. Subport A is the port itself.
 - Strings using grouping or zig-zag can be counted, but not split here.
 
 ## Files it writes

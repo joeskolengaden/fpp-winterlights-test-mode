@@ -315,3 +315,32 @@ test('countLimit: whole live string, or up to the next split part', () => {
     assert.equal(C.countLimit(draft, C.findByUid(draft, s.uid).vs, lidx), 20);
     assert.equal(C.countLimit(draft, { pixelCount: 5, _live: null }, lidx), 0);
 });
+
+test('removeSubport: last subport only, receiver count goes down, diff reports it', () => {
+    const live = cfg();
+    live[0].outputs[2].differentialType = 5;                          // smart v2, two receivers: A and B ... plus
+    live[0].outputs[2].virtualStringsC = [vs({ description: 'Win C', startChannel: 500, pixelCount: 9 })];
+    live[0].outputs[2].differentialType = 6;                          // smart v2, three receivers
+    const draft = C.makeDraft(live);
+    assert.equal(C.subportCount(draft[0].outputs[2]), 3);
+    assert.equal(C.removeSubport(draft, 0, 2, 0).ok, false, 'A is the port itself');
+    assert.equal(C.removeSubport(draft, 0, 2, 1).ok, false, 'B is not the last subport');
+    assert.equal(C.removeSubport(draft, 0, 2, 3).ok, false);
+    const r = C.removeSubport(draft, 0, 2, 2);
+    assert.ok(r.ok); assert.equal(r.removed, 1);
+    assert.equal(draft[0].outputs[2].differentialType, 5);
+    assert.equal(C.subportCount(draft[0].outputs[2]), 2);
+    assert.ok(!('virtualStringsC' in draft[0].outputs[2]));
+    assert.deepEqual(C.listRows(draft).filter(x => x.portNumber === 3).map(C.rowLabel), ['Port 3A', 'Port 3B']);
+    const d = C.diffDraft(draft, live).map(x => x.label + ': ' + x.text);
+    assert.deepEqual(d, ['Port 3C: deleted (9 px, Win C)', 'Port 3: subports 3 \u2192 2']);
+    const out = C.stripDraft(draft);
+    assert.equal(out[0].outputs[2].differentialType, 5);
+    // smart v1 stores the count itself
+    const l1 = cfg(); l1[0].outputs[2].differentialType = 2;
+    const d1 = C.makeDraft(l1);
+    assert.ok(C.removeSubport(d1, 0, 2, 1).ok);
+    assert.equal(d1[0].outputs[2].differentialType, 1);
+    assert.equal(C.removeSubport(d1, 0, 2, 1).ok, false);
+    assert.deepEqual(C.diffDraft(d1, l1).map(x => x.text), ['deleted (10 px, Win B)', 'subports 2 \u2192 1']);
+});

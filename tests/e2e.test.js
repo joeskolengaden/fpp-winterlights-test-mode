@@ -376,6 +376,39 @@ test('add a string, split a string, discard, then apply a split and test the new
     assert.match(await text('#wltm .wltm-table'), /Roof left side\s+✎?\s*1\s+21\s+21\s+RGB\s+Verified/);
 });
 
+test('delete a subport: staged, shown in the changes list, written on apply', async () => {
+    await tab('ports');
+    assert.equal(await page.locator('#wltm [data-act="del-sub"]').count(), 1, 'only the last subport of a port offers Delete');
+    assert.equal(await page.locator('#wltm tr:has-text("Window 1") [data-act="del-sub"]').count(), 0, 'subport A cannot be deleted');
+    await selectRow('Window 2');
+    await act('light');
+    assert.deepEqual(litKeys(), ['0:2:1']);
+    await page.click('#wltm tr:has-text("Window 2") [data-act="del-sub"]');
+    await settle();
+    assert.deepEqual(litKeys(), [], 'deleting switches the lights off first');
+    assert.doesNotMatch(await text('#wltm .wltm-table'), /Window 2/);
+    const foot = await text('#wltm .wltm-foot');
+    assert.match(foot, /Port 3B: deleted \(20 px, Window 2\)/);
+    assert.match(foot, /Port 3: subports 2 → 1/);
+    assert.equal(JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs[2].differentialType, 2, 'FPP untouched until Apply');
+    // discard brings it back, apply writes it
+    await act('discard');
+    assert.match(await text('#wltm .wltm-table'), /Window 2/);
+    await page.click('#wltm tr:has-text("Window 2") [data-act="del-sub"]');
+    await settle();
+    const nb = fs.readdirSync(path.join(dataDir(), 'backups')).length;
+    await act('apply');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    const p3 = JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs[2];
+    assert.equal(p3.differentialType, 1);
+    assert.ok(!('virtualStringsB' in p3));
+    assert.equal(p3.virtualStrings[0].description, 'Window 1');
+    assert.equal(fs.readdirSync(path.join(dataDir(), 'backups')).length, nb + 1);
+    assert.match(await text('#wltm .wltm-foot'), /Nothing waiting/);
+    assert.equal(await page.locator('#wltm [data-act="del-sub"]').count(), 0, 'with one subport left there is nothing to delete');
+});
+
 test('a change made outside the page is never overwritten', async () => {
     await tab('ports');
     await page.click('#wltm tr:has-text("Window 1") [data-act="rename"]');

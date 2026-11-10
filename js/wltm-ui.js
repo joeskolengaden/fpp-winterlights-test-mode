@@ -441,6 +441,22 @@
         render();
     }
 
+    function delSubport(co, port, sub) {
+        var p = S.record.draft[co] && S.record.draft[co].outputs[port];
+        if (!p) return;
+        var name = 'Port ' + (C.toInt(p.portNumber, port) + 1) + C.SUB_LETTERS[sub];
+        var n = 0;
+        draftRows().forEach(function (r) { if (r.co === co && r.port === port && r.sub === sub && !r.empty) n++; });
+        if (!window.confirm('Delete subport ' + name + (n ? ' and its ' + n + ' string' + (n === 1 ? '' : 's') : '') + '?\n\nNothing changes in FPP until you press "Apply to FPP". The change can be discarded before then.')) return;
+        allOff();
+        var res = C.removeSubport(S.record.draft, co, port, sub);
+        if (!res.ok) { toast(res.error, true); return; }
+        S.edit = null; S.add = null;
+        saveRecord();
+        toast(name + ' deleted. It leaves FPP after "Apply to FPP".');
+        render();
+    }
+
     function discardStaged() {
         if (!window.confirm('Discard every change that is waiting to be applied? Test results are kept.')) return;
         allOff();
@@ -631,12 +647,17 @@
                 h += '<td class="wltm-mono">' + (C.toInt(r.vs.startChannel, 0) + 1) + '</td><td>' + px + '</td><td>' + (m.counted ? esc(m.counted) : '<span class="wltm-muted">–</span>') + '</td><td>' + orderCell(r, l) + '</td><td>' + pill(st.cls, st.text) + '</td>';
             }
             h += '<td class="wltm-nowrap">' + btn('add-open', '+', 'sm', ' data-co="' + r.co + '" data-port="' + r.port + '" data-sub="' + r.sub + '" title="Add a string to ' + esc(C.rowLabel(r)) + '"');
+            if (r.sub >= 1 && r.sub === C.subportCount(S.record.draft[r.co].outputs[r.port]) - 1 && isFirstOfList(r)) h += ' ' + btn('del-sub', '\ud83d\uddd1', 'sm', ' data-co="' + r.co + '" data-port="' + r.port + '" data-sub="' + r.sub + '" title="Delete subport ' + esc(r.subLetter) + ' of port ' + r.portNumber + '"');
             if (uid && !r.vs._live) h += ' ' + btn('remove-new', '✕', 'sm', ' data-uid="' + esc(uid) + '" title="Remove this new string"');
             h += '</td></tr>';
             if (S.add && S.add.co === r.co && S.add.port === r.port && S.add.sub === r.sub && isLastOfList(r)) h += addForm(r);
         });
         h += '</table></div><div class="wltm-body wltm-cap">Click a row to select it. ✎ renames a port or subport. + adds a string to that port or subport. Changes wait at the bottom of the page until you press "Apply to FPP".<br>"Identify all ports" lights as many pixels as the port number (port 3 → 3 pixels). On ports with subports, two dark pixels follow, then 1 pixel for subport A, 2 for B, and so on.</div></div>';
         return h;
+    }
+    function isFirstOfList(r) {
+        var rows = draftRows().filter(function (x) { return x.co === r.co && x.port === r.port && x.sub === r.sub; });
+        return rows.length && rows[0].key === r.key;
     }
     function isLastOfList(r) {
         var rows = draftRows().filter(function (x) { return x.co === r.co && x.port === r.port && x.sub === r.sub; });
@@ -928,6 +949,7 @@
             case 'rename-cancel': S.edit = null; render(); break;
             case 'add-open': S.add = { co: +t.getAttribute('data-co'), port: +t.getAttribute('data-port'), sub: +t.getAttribute('data-sub') }; S.edit = null; render(); break;
             case 'add-ok': addCommit(); break;
+            case 'del-sub': delSubport(+t.getAttribute('data-co'), +t.getAttribute('data-port'), +t.getAttribute('data-sub')); break;
             case 'add-cancel': S.add = null; render(); break;
             case 'remove-new':
                 if (C.removeNewString(S.record.draft, t.getAttribute('data-uid'))) { saveRecord(); render(); }

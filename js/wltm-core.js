@@ -313,6 +313,20 @@
             if (off === 0 && parts.length === 0 && toInt(vs.startChannel, 0) !== toInt(l.vs.startChannel, 0)) parts.push('start channel ' + (toInt(l.vs.startChannel, 0) + 1) + ' \u2192 ' + (toInt(vs.startChannel, 0) + 1));
             if (parts.length) out.push({ key: r.key, uid: vs._uid, label: rowLabel(r), text: parts.join(', ') });
         });
+        // strings FPP runs that the draft no longer has (deleted subport)
+        listRows(liveOutputs).forEach(function (r) {
+            if (r.empty || seenLive[r.key]) return;
+            out.push({ key: r.key, label: rowLabel(r), text: 'deleted (' + r.vs.pixelCount + ' px' + (r.vs.description ? ', ' + r.vs.description : '') + ')' });
+        });
+        (draft || []).forEach(function (co, ci) {
+            if (!co || !Array.isArray(co.outputs)) return;
+            co.outputs.forEach(function (port, pi) {
+                var lp = liveOutputs && liveOutputs[ci] && liveOutputs[ci].outputs && liveOutputs[ci].outputs[pi];
+                if (!port || !lp) return;
+                var a = subportCount(lp), b = subportCount(port);
+                if (a !== b) out.push({ key: ci + ':' + pi, label: 'Port ' + (toInt(port.portNumber, pi) + 1), text: 'subports ' + a + ' \u2192 ' + b });
+            });
+        });
         return out;
     }
 
@@ -381,6 +395,25 @@
             list.push(vs);
         }
         return { ok: true, uid: vs._uid };
+    }
+
+    /*
+     * Delete a subport (B, C, ...). FPP numbers subports by position (the receiver count), so only the LAST
+     * one can be removed; its strings are dropped and the receiver count goes down by one.
+     * Smart v1 stores the count itself (1..3), smart v2 stores count + 3.
+     */
+    function removeSubport(draft, co, port, sub) {
+        var p = draft && draft[co] && draft[co].outputs && draft[co].outputs[port];
+        if (!p) return { ok: false, error: 'That port does not exist.' };
+        var n = subportCount(p);
+        if (sub < 1) return { ok: false, error: 'Subport A is the port itself and cannot be deleted. Remove its strings instead.' };
+        if (sub >= n) return { ok: false, error: 'That subport does not exist.' };
+        if (sub !== n - 1) return { ok: false, error: 'Only the last subport can be deleted, because FPP numbers them by position. Delete ' + SUB_LETTERS[n - 1] + ' first.' };
+        var dt = toInt(p.differentialType, 0), removed = 0;
+        (Array.isArray(p[SUB_KEYS[sub]]) ? p[SUB_KEYS[sub]] : []).forEach(function (v) { if (v && toInt(v.pixelCount, 0) > 0) removed++; });
+        delete p[SUB_KEYS[sub]];
+        p.differentialType = dt - 1;
+        return { ok: true, removed: removed };
     }
 
     function findByUid(draft, uid) {
@@ -677,7 +710,7 @@
         subportCount: subportCount, defaultVs: defaultVs, dataPixels: dataPixels, listRows: listRows, rowLabel: rowLabel,
         makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft,
         cleanDescription: cleanDescription, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
-        findByUid: findByUid, removeNewString: removeNewString, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
+        findByUid: findByUid, removeNewString: removeNewString, removeSubport: removeSubport, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
         pixelChannel: pixelChannel, mergeRanges: mergeRanges, setString: setString, pixelRanges: pixelRanges,
         emptyFrame: emptyFrame, solidFrame: solidFrame, colourFrame: colourFrame, frameRequest: frameRequest, identifyAllFrame: identifyAllFrame,
         statusOf: statusOf, groupByOrder: groupByOrder, toCsv: toCsv
