@@ -2,7 +2,7 @@
     "repoName": "fpp-winterlights-test-mode",
     "name": "PRO Test Mode - By WinterLights.in",
     "author": "joeskolengaden",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "A test page for BeagleBone pixel outputs: identify every port and subport, count the LEDs on each one, find and verify the colour order (one port or all ports at once, grouped by result), rename ports, and write the results back to the Pixel Strings configuration.",
     "homeURL": "https://github.com/joeskolengaden/fpp-winterlights-test-mode",
     "srcURL": "https://github.com/joeskolengaden/fpp-winterlights-test-mode.git",

@@ -432,12 +432,12 @@ test('description notes: the generated name is kept, the note rides on its tail,
     // a name that already fills the line leaves no room
     assert.equal(C.noteRoom('y'.repeat(58)), 0);
     assert.equal(C.withNote('y'.repeat(58), 'note').text, 'y'.repeat(58));
-    // a split names the new part after the generated name only; the note stays with the first part
+    // a split letters the parts after the generated name only; the note stays with the first part
     const l = cfg(); l[0].outputs[0].virtualStrings[0].description = 'Roof | left to right';
     const d = C.makeDraft(l), u = d[0].outputs[0].virtualStrings[0]._uid;
     assert.ok(C.splitString(d, 0 === 0 ? u : u, 20).ok);
     const names = d[0].outputs[0].virtualStrings.map(v => v.description);
-    assert.deepEqual(names, ['Roof | left to right', 'Roof part 2']);
+    assert.deepEqual(names, ['Roof A | left to right', 'Roof B']);
 });
 
 test('description tags: the standard list, tidy-up, no repeats, no pipes', () => {
@@ -450,4 +450,50 @@ test('description tags: the standard list, tidy-up, no repeats, no pipes', () =>
     assert.deepEqual(C.cleanTags('nope'), []);
     // a tag used as a note fits the same 60-character description rule
     assert.equal(C.withNote('port 3', 'u bar driver side beam').text, 'port 3 | u bar driver side beam');
+});
+
+test('split parts are lettered A, B, C - never "part 2 part 2"', () => {
+    const l = cfg(); l[0].outputs[0].virtualStrings[0] = vs({ description: 'port 9', startChannel: 0, pixelCount: 100, colorOrder: 'RGB' });
+    const d = C.makeDraft(l);
+    const list = () => d[0].outputs[0].virtualStrings;
+    const names = () => list().map(v => v.description);
+    const px = () => list().map(v => v.pixelCount);
+    assert.ok(C.splitString(d, list()[0]._uid, 22).ok);
+    assert.deepEqual(names(), ['port 9 A', 'port 9 B']);
+    // split the second part: A stays, the new tail becomes C
+    assert.ok(C.splitString(d, list()[1]._uid, 13).ok);
+    assert.deepEqual(names(), ['port 9 A', 'port 9 B', 'port 9 C']);
+    assert.deepEqual(px(), [22, 13, 65]);
+    // split the FIRST part: the later parts move down a letter, none is lost or repeated
+    assert.ok(C.splitString(d, list()[0]._uid, 10).ok);
+    assert.deepEqual(names(), ['port 9 A', 'port 9 B', 'port 9 C', 'port 9 D']);
+    assert.deepEqual(px(), [10, 12, 13, 65]);
+    // notes stay with their own part
+    list()[1].description = 'port 9 B | top grill';
+    assert.ok(C.splitString(d, list()[0]._uid, 5).ok);
+    assert.deepEqual(names(), ['port 9 A', 'port 9 B', 'port 9 C | top grill', 'port 9 D', 'port 9 E']);
+    // other strings on the same output, with other names, are left alone
+    const l2 = cfg(); l2[0].outputs[0].virtualStrings = [vs({ description: 'Roof', startChannel: 0, pixelCount: 40 }), vs({ description: 'Eave', startChannel: 120, pixelCount: 40 })];
+    const d2 = C.makeDraft(l2), v2 = d2[0].outputs[0].virtualStrings;
+    assert.ok(C.splitString(d2, v2[0]._uid, 10).ok);
+    assert.deepEqual(v2.map(v => v.description), ['Roof A', 'Roof B', 'Eave']);
+    // older "part 2" names are re-lettered on the next split
+    const l3 = cfg(); l3[0].outputs[0].virtualStrings = [vs({ description: 'port 9', startChannel: 0, pixelCount: 22 }), vs({ description: 'port 9 part 2', startChannel: 66, pixelCount: 13 }), vs({ description: 'port 9 part 2 part 2', startChannel: 105, pixelCount: 985 })];
+    const d3 = C.makeDraft(l3), v3 = d3[0].outputs[0].virtualStrings;
+    assert.ok(C.splitString(d3, v3[2]._uid, 10).ok);
+    assert.deepEqual(v3.map(v => v.description), ['port 9 A', 'port 9 B', 'port 9 C', 'port 9 D']);
+    // a string without a name uses its port label; a name that fills the line still keeps its letter
+    const l4 = cfg(); l4[0].outputs[0].virtualStrings = [vs({ description: '', startChannel: 0, pixelCount: 40 })];
+    const d4 = C.makeDraft(l4), v4 = d4[0].outputs[0].virtualStrings;
+    assert.ok(C.splitString(d4, v4[0]._uid, 10).ok);
+    assert.ok(/ A$/.test(v4[0].description) && / B$/.test(v4[1].description), v4.map(v => v.description).join('|'));
+    const l5 = cfg(); l5[0].outputs[0].virtualStrings = [vs({ description: 'q'.repeat(60), startChannel: 0, pixelCount: 40 })];
+    const d5 = C.makeDraft(l5), v5 = d5[0].outputs[0].virtualStrings;
+    assert.ok(C.splitString(d5, v5[0]._uid, 10).ok);
+    assert.ok(v5.every(v => v.description.length <= 60));
+    assert.ok(/ A$/.test(v5[0].description) && / B$/.test(v5[1].description));
+    assert.equal(C.partLetter(0), 'A'); assert.equal(C.partLetter(25), 'Z'); assert.equal(C.partLetter(26), 'AA');
+    assert.equal(C.descStem('port 9 part 2 part 2 | n'), 'port 9');
+    assert.equal(C.descStem('port 9 C'), 'port 9');
+    assert.equal(C.descStem('Roof left side'), 'Roof left side');
 });

@@ -354,10 +354,10 @@ test('add a string, split a string, discard, then apply a split and test the new
     assert.equal(await text('#wltm-count-pos'), '21');
     await act('count-split');
     const t = await text('#wltm .wltm-table');
-    assert.match(t, /Roof left side\s+✎?\s*1\s+50→21\s+21/);
-    assert.match(t, /Roof left side part 2\s+✎?\s*64\s+29/);
+    assert.match(t, /Roof left side A\s+✎?\s*1\s+50→21\s+21/);
+    assert.match(t, /Roof left side B\s+✎?\s*64\s+29/);
     // the new part can be lit straight away, on the right physical pixels
-    await selectRow('Roof left side part 2');
+    await selectRow('Roof left side B');
     await act('count-first');
     assert.equal(look('0:0:0').findIndex(c => c !== 'k'), 21);
     await act('count-end');
@@ -367,13 +367,13 @@ test('add a string, split a string, discard, then apply a split and test the new
     await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
     await settle();
     const vsl = JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs[0].virtualStrings;
-    assert.deepEqual(vsl.map(v => [v.description, v.startChannel, v.pixelCount]), [['Roof left side', 0, 21], ['Roof left side part 2', 63, 29]]);
-    await selectRow('Roof left side part 2');
+    assert.deepEqual(vsl.map(v => [v.description, v.startChannel, v.pixelCount]), [['Roof left side A', 0, 21], ['Roof left side B', 63, 29]]);
+    await selectRow('Roof left side B');
     await act('count-first');
     assert.equal(look('0:0:0').findIndex(c => c !== 'k'), 21, 'after apply the second string starts at physical pixel 22');
     await act('all-off');
     // the first part kept its verified result, the split part starts fresh
-    assert.match(await text('#wltm .wltm-table'), /Roof left side\s+✎?\s*1\s+21\s+21\s+RGB\s+Verified/);
+    assert.match(await text('#wltm .wltm-table'), /Roof left side A\s+✎?\s*1\s+21\s+21\s+RGB\s+Verified/);
 });
 
 test('delete a subport: staged, shown in the changes list, written on apply', async () => {
@@ -541,9 +541,10 @@ test('count tab: a note typed while counting is added to the end of the descript
     await page.fill('#wltm-count-note', 'Gate, outline');
     await act('count-split');
     const t2 = await text('#wltm .wltm-table');
-    assert.ok(t2.includes(base + ' | Gate, outline'));
-    assert.ok(t2.includes(base + ' part 2'));
-    assert.ok(!t2.includes(base + ' | Gate, outline part 2'));
+    const stem = C.descStem(base);
+    assert.ok(t2.includes(stem + ' A | Gate, outline'), 'the counted part is A and keeps the note');
+    assert.ok(t2.includes(stem + ' B'), 'the new part is B');
+    assert.ok(!t2.includes('part 2'), 'no more "part 2" names');
     // a long note is cut to FPP's 60 characters and the page says so
     await act('count-end');
     await act('count-step', '[data-d="-1"]');

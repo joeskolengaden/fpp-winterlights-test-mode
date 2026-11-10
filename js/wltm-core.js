@@ -367,6 +367,24 @@
         return { text: n ? base + NOTE_SEP + n : base, cut: cut, note: n };
     }
 
+    /* Parts of a split string are lettered: "port 9" splits into "port 9 A" and "port 9 B", splitting B gives A, B, C.
+       The stem is the generated name without a trailing letter (or an older " part 2" tail). */
+    function partLetter(i) { return i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)); }
+    function descStem(desc) {
+        var b = descBase(desc).replace(/(?: part \d+)+$/i, '').replace(/ [A-Z]{1,2}$/, '').trim();
+        return b;
+    }
+    /* Give every part of this stem in the list its letter, in list order. Notes stay with their part. */
+    function letterParts(list, stem) {
+        var n = 0;
+        list.forEach(function (v) {
+            if (!v || descStem(v.description) !== stem) return;
+            var letter = partLetter(n++);
+            var name = cleanDescription(stem.slice(0, DESC_MAX - letter.length - 1).trim() + ' ' + letter);
+            v.description = withNote(name, descNote(v.description)).text;
+        });
+    }
+
     /* Tags offered as one-click words for the description note (editable on the page, kept on the controller). */
     var DEFAULT_TAGS = ['Lip', 'driver side eye', 'cleaner side eye', 'top grill', 'main grill', 'bottom grill', 'top light',
         'u bar centre', 'u bar driver side beam', 'u bar cleaner side beam', 'eye', 'eyebrow'];
@@ -493,7 +511,8 @@
         second._uid = newUid();
         second.pixelCount = n - at;
         second.nullNodes = 0;
-        second.description = cleanDescription((descBase(vs.description) || rowLabel(r)) + ' part 2');      // the note belongs to the first part
+        if (!descBase(vs.description)) vs.description = cleanDescription(rowLabel(r) + (descNote(vs.description) ? NOTE_SEP + descNote(vs.description) : ''));   // an unnamed string takes its port label
+        second.description = descBase(vs.description);                      // lettered below; the note belongs to the first part
         vs.pixelCount = at;
         vs.endNulls = 0;
         if (toInt(vs.reverse, 0) === 1) {
@@ -505,6 +524,7 @@
         }
         second._live = vs._live ? { key: vs._live.key, off: toInt(vs._live.off, 0) + at } : null;
         list.splice(r.idx + 1, 0, second);
+        letterParts(list, descStem(second.description) || rowLabel(r));
         return { ok: true, uid: second._uid };
     }
 
@@ -752,7 +772,7 @@
         orderInfo: orderInfo, inputOffset: inputOffset, testColours: testColours, allowedOrders: allowedOrders, detectOrder: detectOrder,
         subportCount: subportCount, defaultVs: defaultVs, dataPixels: dataPixels, listRows: listRows, rowLabel: rowLabel,
         makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft,
-        cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, DEFAULT_TAGS: DEFAULT_TAGS, cleanTags: cleanTags, TAG_MAX_LEN: TAG_MAX_LEN, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
+        cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, DEFAULT_TAGS: DEFAULT_TAGS, descStem: descStem, partLetter: partLetter, letterParts: letterParts, cleanTags: cleanTags, TAG_MAX_LEN: TAG_MAX_LEN, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
         findByUid: findByUid, removeNewString: removeNewString, removeSubport: removeSubport, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
         pixelChannel: pixelChannel, mergeRanges: mergeRanges, setString: setString, pixelRanges: pixelRanges,
         emptyFrame: emptyFrame, solidFrame: solidFrame, colourFrame: colourFrame, frameRequest: frameRequest, identifyAllFrame: identifyAllFrame,
