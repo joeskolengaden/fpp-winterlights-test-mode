@@ -1,6 +1,6 @@
 <?php
 /*
- * Winterlights Test Mode - page shell.
+ * PRO Test Mode - By WinterLights.in - page shell.
  * FPP 5.4 adds every file in js/ and css/ to the page head by itself; the small loader below covers FPP
  * versions that do not, so the page works either way.
  */
@@ -11,7 +11,7 @@ if (is_array($wltmInfo) && isset($wltmInfo['version'])) $wltmVersion = (string)$
 ?>
 <div id="wltm" data-plugin="<?php echo htmlspecialchars($wltmPlugin, ENT_QUOTES, 'UTF-8'); ?>" data-version="<?php echo htmlspecialchars($wltmVersion, ENT_QUOTES, 'UTF-8'); ?>">
   <noscript>This page needs JavaScript.</noscript>
-  <div class="wltm-loading">Loading Winterlights Test Mode&hellip;</div>
+  <div class="wltm-loading">Loading PRO Test Mode&hellip;</div>
 </div>
 <script>
 (function () {

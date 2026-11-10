@@ -16,6 +16,7 @@
         backups: [],
         tab: 'ports', sel: '',
         brightness: 30,
+        enabled: true,                  // master switch: when false nothing can be lit
         fppd: { known: false, running: false, status: '', mode: '' },
         lit: { label: '', note: '' },
         ident: { colour: 'W' },
@@ -160,6 +161,7 @@
 
     /* Show a frame (empty frame = everything off). level 0 keeps test mode on but dark (used for blinking). */
     function show(frame, label, lvl) {
+        if (!S.enabled && frame.ranges.length) return drv.done || Promise.resolve();
         drv.pending = { frame: frame, label: label || '', level: lvl === 0 ? 0 : 1 };
         S.lit = { label: frame.ranges.length ? (label || '') : '', note: frame.note || '' };
         renderStatus();
@@ -554,13 +556,28 @@
     function pill(cls, text) { return '<span class="wltm-pill ' + cls + '">' + esc(text) + '</span>'; }
     function btn(act, text, cls, attrs) { return '<button type="button" class="wltm-btn ' + (cls || '') + '" data-act="' + act + '"' + (attrs || '') + '>' + text + '</button>'; }
 
+    var LIGHT_ACTS = ['light', 'blink', 'first', 'identify-all', 'count-step', 'count-first', 'count-half', 'count-end', 'send', 'group-light', 'group-verify'];
+    function applyDisabled() {
+        if (!root || S.enabled) return;
+        LIGHT_ACTS.forEach(function (a) {
+            Array.prototype.forEach.call(root.querySelectorAll('[data-act="' + a + '"]'), function (b) { b.disabled = true; b.title = 'Test mode is disabled. Turn it on with the switch at the top.'; });
+        });
+    }
+    function setEnabled(on) {
+        S.enabled = !!on;
+        if (!on) { stopBlink(); S.colour.current = ''; S.verify = null; S.count.started = false; allOff(); }
+        render();
+        toast(on ? 'Test mode enabled.' : 'Test mode disabled. All lights are off and nothing can be lit until you enable it again.');
+    }
+
     function renderStatus() {
         var el = root.querySelector('#wltm-status');
         if (!el || !S.ready) return;
         var act = document.activeElement;
         if (act && act.id === 'wltm-bright' && el.contains(act) && el.querySelector('.wltm-strip')) return;   // do not rebuild the slider mid-drag
         var h = '';
-        h += S.lit.label ? pill('on', 'TEST MODE ON') : pill('grey', 'Test mode off');
+        h += '<button type="button" class="wltm-master ' + (S.enabled ? 'on' : 'off') + '" data-act="toggle-enabled" role="switch" aria-checked="' + (S.enabled ? 'true' : 'false') + '" title="Master switch for all testing"><span class="knob"></span><span class="lbl">' + (S.enabled ? 'Test mode enabled' : 'Test mode DISABLED') + '</span></button>';
+        h += !S.enabled ? pill('warn', 'Nothing can be lit') : (S.lit.label ? pill('on', 'LIGHTS ON') : pill('grey', 'Lights off'));
         if (S.fppd.known) h += S.fppd.running ? pill('ok', 'fppd running') : pill('warn', 'fppd not running');
         var rows = C.listRows(S.liveOutputs), ports = {}, n = 0;
         rows.forEach(function (r) { ports[r.co + ':' + r.port] = 1; if (!r.empty) n++; });
@@ -577,9 +594,11 @@
         }
         var off = S.liveOutputs.filter(function (co) { return co && co.type === 'BBB48String' && co.enabled === 0; }).length;
         if (off) warn += '<div class="wltm-note bad">The BeagleBone pixel-string output is disabled in FPP, so the lights will not respond. Enable it on the Pixel Strings page.</div>';
+        if (!S.enabled) warn += '<div class="wltm-note">Test mode is disabled, so no light, colour or counting button will light anything. Renaming, saved results and Apply still work. Use the switch above to enable it.</div>';
         if (S.lit.note) warn += '<div class="wltm-note">' + esc(S.lit.note) + '</div>';
         if (S.notice) warn += '<div class="wltm-note">' + esc(S.notice) + ' ' + btn('dismiss-notice', 'OK', 'sm') + '</div>';
         el.innerHTML = '<div class="wltm-strip">' + h + '</div>' + warn;
+        applyDisabled();
     }
 
     function orderCell(r, l) {
@@ -852,6 +871,7 @@
         saved.forEach(function (n) { nt.appendChild(n); });
         Object.keys(keep).forEach(function (id) { var x = root.querySelector(id); if (x) x.value = keep[id]; });
         renderStatus();
+        applyDisabled();
         var rn = root.querySelector('#wltm-rename');
         if (rn) { rn.focus(); rn.select(); }
     }
@@ -882,6 +902,7 @@
             }
         }
         switch (act) {
+            case 'toggle-enabled': setEnabled(!S.enabled); break;
             case 'tab':
                 if (S.tab !== t.getAttribute('data-tab')) { allOff(); S.tab = t.getAttribute('data-tab'); S.edit = null; S.add = null; }
                 render(); break;
@@ -952,7 +973,7 @@
             return;
         }
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-        if (S.tab !== 'count' || S.busy || !liveFor(selRow())) return;
+        if (S.tab !== 'count' || S.busy || !S.enabled || !liveFor(selRow())) return;
         var d = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : ev.key === 'ArrowUp' ? 10 : ev.key === 'ArrowDown' ? -10 : 0;
         if (!d) return;
         ev.preventDefault();

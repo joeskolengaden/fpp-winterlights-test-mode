@@ -125,7 +125,7 @@ test('page loads and lists every port and subport', async () => {
     assert.match(rows[3], /^3\s+A\s+Window 1/);
     assert.match(rows[4], /^3\s+B\s+Window 2/);
     assert.match(rows[6], /^5\s+–\s+\(empty\).*Unused/s);
-    assert.match(await text('#wltm-status'), /Test mode off.*fppd running.*5 ports · 5 strings/s);
+    assert.match(await text('#wltm-status'), /Test mode enabled.*Lights off.*fppd running.*5 ports · 5 strings/s);
     assert.deepEqual(requests(), [], 'nothing is sent to the lights just by opening the page');
     await shot('01-ports');
 });
@@ -135,7 +135,7 @@ test('identify: light one string, first pixel, colour, identify all, stop', asyn
     await act('light');
     assert.deepEqual(litKeys(), ['0:2:1']);
     assert.ok(look('0:2:1').every(c => c === 'RGB'), 'whole string white');
-    assert.match(await text('#wltm-status'), /TEST MODE ON.*Lighting: Port 3B/s);
+    assert.match(await text('#wltm-status'), /LIGHTS ON.*Lighting: Port 3B/s);
     await act('first');
     assert.equal(look('0:2:1').filter(c => c !== 'k').length, 1);
     assert.notEqual(look('0:2:1')[0], 'k');
@@ -154,6 +154,30 @@ test('identify: light one string, first pixel, colour, identify all, stop', asyn
     await act('all-off');
     assert.deepEqual(litKeys(), []);
     assert.equal(sim().on, false, 'test mode is switched off, not just dark');
+});
+
+test('master switch: disabling turns everything off and blocks lighting; enabling restores it', async () => {
+    await selectRow('Window 2');
+    await act('light');
+    assert.deepEqual(litKeys(), ['0:2:1']);
+    await act('toggle-enabled');
+    assert.deepEqual(litKeys(), [], 'disabling switches the lights off');
+    assert.equal(sim().on, false);
+    assert.match(await text('#wltm-status'), /Test mode DISABLED[\s\S]*Nothing can be lit/);
+    const n = requests().length;
+    for (const a of ['light', 'blink', 'first', 'identify-all']) assert.equal(await page.locator('#wltm [data-act="' + a + '"]').first().isDisabled().catch(() => true), true, a + ' is disabled');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+    assert.equal(requests().length, n, 'nothing was sent while disabled');
+    await tab('colour');
+    assert.equal(await page.locator('#wltm [data-act="send"][data-c="R"]').isDisabled(), true);
+    await tab('ports');
+    await act('toggle-enabled');
+    assert.match(await text('#wltm-status'), /Test mode enabled/);
+    await act('light');
+    assert.deepEqual(litKeys(), ['0:2:1']);
+    await act('all-off');
+    assert.deepEqual(litKeys(), []);
 });
 
 test('rename a port and an empty port', async () => {

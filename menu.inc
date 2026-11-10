@@ -1,7 +1,7 @@
 <?php
-// Menu entries for Winterlights Test Mode (FPP includes this once per menu section).
+// Menu entries for PRO Test Mode - By WinterLights.in (FPP includes this once per menu section).
 $menuEntries = Array(
-    Array('text' => 'Winterlights Test Mode', 'type' => 'status', 'page' => 'plugin.php', 'wrap' => 1)
+    Array('text' => 'PRO Test Mode - By WinterLights.in', 'type' => 'status', 'page' => 'plugin.php', 'wrap' => 1)
 );
 foreach ($menuEntries as $entry) {
     if ($entry['type'] != $menu) continue;

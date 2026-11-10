@@ -117,3 +117,8 @@
   #wltm .wltm-cols,#wltm .wltm-cols.wide{grid-template-columns:minmax(0,1fr)}
   #wltm .wltm-difflist{max-width:100%}
 }
+
+#wltm .wltm-master{display:inline-flex;align-items:center;gap:8px;border:2px solid #1f8a4c;background:#e9f7ef;color:#17663a;border-radius:20px;padding:3px 12px 3px 4px;font-weight:700;font-size:13px;cursor:pointer}
+#wltm .wltm-master .knob{width:20px;height:20px;border-radius:50%;background:#1f8a4c;display:inline-block;margin-left:0}
+#wltm .wltm-master.off{border-color:#a32a20;background:#fdecea;color:#8f231a;flex-direction:row-reverse;padding:3px 4px 3px 12px}
+#wltm .wltm-master.off .knob{background:#a32a20}

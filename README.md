@@ -1,4 +1,4 @@
-# Winterlights Test Mode
+# PRO Test Mode - By WinterLights.in
 
 An FPP plugin that adds a test page for BeagleBone pixel outputs. It is built for commissioning a controller:
 find out which port is which, how many LEDs each one really has, and what colour order the pixels use, then
@@ -15,7 +15,7 @@ https://raw.githubusercontent.com/joeskolengaden/fpp-winterlights-test-mode/main
 ```
 
 The plugin is plain PHP and JavaScript. It does not patch or rebuild FPP. Open it from
-**Status/Control → Winterlights Test Mode**.
+**Status/Control → PRO Test Mode - By WinterLights.in**.
 
 ## What it does
 
@@ -25,6 +25,13 @@ The plugin is plain PHP and JavaScript. It does not patch or rebuild FPP. Open i
 | **Count LEDs** | Step a single lit pixel (±1, ±10, ±50, arrow keys) until it sits on the last real LED, then save the count. "Split here" turns the pixels after the lit one into a new string on the same port. |
 | **Colour order** | Send one colour at a time (red, green, blue, and white on RGBW strings) to all ports or to one port, and click the colour each string actually shows. Strings with the same result are grouped; each group's colour order can be changed with one button and verified afterwards. |
 | **Record** | The saved result for every string (count, detected order, verified, dates), CSV export, and the configuration backups with a Restore button. |
+
+### Master switch
+
+The **Test mode enabled / DISABLED** switch at the top of the page turns all testing on or off. Switching it off
+turns every light off at once and disables every light, colour, count and identify button (and the arrow keys)
+until you switch it back on. Renaming, saved results and Apply keep working while it is off. It always starts
+enabled when the page is opened.
 
 ### Changes wait until you apply them
 
