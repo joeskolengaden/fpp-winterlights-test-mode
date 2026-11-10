@@ -507,3 +507,46 @@ test('chase: pixel 1 is the pixel nearest the controller, so a reversed string c
     assert.deepEqual(C.solidFrame([{ live: r, from: 9, count: 1 }]).ranges, [[1, 3]]);
     assert.deepEqual(C.solidFrame([{ live: r, from: 0, count: 3 }]).ranges, [[22, 30]], 'a block of three at the start of a reversed string');
 });
+
+test('page apply: only the fields of one page go to FPP, everything else keeps waiting', () => {
+    const l = cfg();
+    const live = JSON.parse(JSON.stringify(l));
+    const d = C.makeDraft(l);
+    const a = d[0].outputs[0].virtualStrings[0], b = d[0].outputs[1].virtualStrings[0];
+    a.colorOrder = 'GRB'; a.description = 'Eave'; a.pixelCount = 40;      // Roof: colour, name and count all edited
+    b.colorOrder = 'RGB'; b.pixelCount = 20;                                // Tree: RGBW -> RGB changes the channels per pixel
+    const only = (kind) => C.pageConfig(d, live, kind);
+    // colour order: Roof only; the Tree change needs the full Apply
+    let r = only('colour');
+    assert.deepEqual(r.changes.map(c => c.label), ['Port 1']);
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].colorOrder, 'GRB');
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].description, 'Roof', 'name untouched');
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].pixelCount, 50, 'count untouched');
+    assert.equal(r.channelOutputs[0].outputs[1].virtualStrings[0].colorOrder, 'RGBW');
+    assert.equal(r.skipped.length, 1);
+    assert.match(r.skipped[0].why, /channels per pixel/);
+    // names: description only
+    r = only('names');
+    assert.deepEqual(r.changes.map(c => c.label), ['Port 1']);
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].description, 'Eave');
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].colorOrder, 'RGB');
+    // counts: pixel count and the note, not the colour
+    r = only('count');
+    assert.deepEqual(r.changes.map(c => c.label).sort(), ['Port 1', 'Port 2']);
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].pixelCount, 40);
+    assert.equal(r.channelOutputs[0].outputs[0].virtualStrings[0].colorOrder, 'RGB');
+    // the input config is never modified
+    assert.deepEqual(live, JSON.parse(JSON.stringify(cfg())));
+    // the result carries no private fields
+    assert.ok(!JSON.stringify(r.channelOutputs).includes('_uid') && !JSON.stringify(r.channelOutputs).includes('_live'));
+    // a split string is left for the full Apply
+    const l2 = cfg(), live2 = JSON.parse(JSON.stringify(l2)), d2 = C.makeDraft(l2);
+    assert.ok(C.splitString(d2, d2[0].outputs[0].virtualStrings[0]._uid, 20).ok);
+    d2[0].outputs[0].virtualStrings[0].colorOrder = 'GRB';
+    r = C.pageConfig(d2, live2, 'colour');
+    assert.equal(r.changes.length, 0);
+    assert.ok(r.skipped.length >= 1 && /split/.test(r.skipped[0].why));
+    // nothing changed: nothing to apply
+    const d3 = C.makeDraft(cfg());
+    assert.equal(C.pageConfig(d3, cfg(), 'colour').changes.length, 0);
+});

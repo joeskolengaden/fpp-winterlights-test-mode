@@ -45,6 +45,18 @@ FPP until you press **Apply to FPP**. Apply then:
 If the Pixel Strings configuration was changed somewhere else in the meantime, Apply refuses and reloads instead
 of overwriting it.
 
+**Apply from one page.** Beside the full Apply, the page you are on has its own green button that writes only what that
+page is about, with the same backup and restart. Everything else keeps waiting.
+
+| Page | Button | Writes |
+| --- | --- | --- |
+| Colour order | Apply colour order only | colour order of strings that are a plain edit |
+| Count LEDs | Apply pixel counts and notes only | pixel count (with the start-channel change a reversed string needs) and the description note |
+| Ports & identify | Apply names only | descriptions |
+
+A string is left for the full Apply (the footer says how many) when copying one field alone would not match what you staged:
+it is new, split off or part of a split, or its colour order changes between 3 and 4 channels per pixel, which moves its channels.
+
 ### How the colour order is worked out
 
 FPP's colour-order setting lists the colours in the order they go down the wire. If FPP is set to `RGB` and

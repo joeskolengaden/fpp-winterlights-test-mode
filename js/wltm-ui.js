@@ -648,6 +648,45 @@
         render();
     }
 
+    /* Apply only what the current page is about (colour order / counts and notes / names); the rest keeps waiting. */
+    function pageKind() { return S.tab === 'colour' ? 'colour' : S.tab === 'count' ? 'count' : S.tab === 'ports' ? 'names' : ''; }
+    function pagePlan() {
+        var k = pageKind();
+        return k ? C.pageConfig(S.record.draft, S.liveOutputs, k) : null;
+    }
+    async function applyPage() {
+        var k = pageKind(), plan = pagePlan();
+        if (!plan || !plan.changes.length) return;
+        var all = diffs().length, rest = all - plan.changes.length;
+        var msg = 'Write ' + plan.changes.length + ' ' + C.PAGE_KINDS[k] + ' change' + (plan.changes.length === 1 ? '' : 's') + ' to FPP\'s Pixel Strings configuration and restart fppd?\n\n' +
+            plan.changes.slice(0, 8).map(function (c) { return c.label + ': ' + c.text; }).join('\n') + (plan.changes.length > 8 ? '\n…and ' + (plan.changes.length - 8) + ' more' : '') +
+            '\n\n' + (rest > 0 ? rest + ' other waiting change' + (rest === 1 ? '' : 's') + ' stay waiting.' : 'Nothing else is waiting.') +
+            '\nA backup is saved first. The lights go dark for a few seconds during the restart.';
+        if (!window.confirm(msg)) return;
+        try {
+            await allOff();
+            S.busy = 'Saving to FPP…'; render();
+            if (saveTimer) await flushRecord();
+            var cfg = C.clone(S.liveRoot);
+            cfg.channelOutputs = plan.channelOutputs;
+            var res = await call('apply', { expectHash: S.liveHash, configText: JSON.stringify(cfg, null, 2) });
+            S.liveRoot = cfg; S.liveOutputs = cfg.channelOutputs; S.liveHash = res.liveHash;
+            S.backups = res.backups || S.backups;
+            S.lidx = C.liveIndex(S.liveOutputs);
+            S.record.baseHash = S.liveHash;            // the rest of the draft is untouched and still waiting
+            S.count.pos = {}; S.count.note = {};
+            saveRecord();
+            await flushRecord();
+            var ok = await restartFppd();
+            if (ok) toast('Applied ' + plan.changes.length + ' ' + C.PAGE_KINDS[k] + ' change' + (plan.changes.length === 1 ? '' : 's') + '. Backup saved as ' + (res.backup || '(none needed)') + '.' + (rest > 0 ? ' ' + rest + ' other change' + (rest === 1 ? '' : 's') + ' still waiting.' : ''));
+        } catch (e) {
+            S.busy = '';
+            toast(e.message, true);
+            try { await loadState(); } catch (e2) { /* keep what we have */ }
+        }
+        render();
+    }
+
     async function restoreBackup(name) {
         if (!window.confirm('Restore ' + name + ' as FPP\'s Pixel Strings configuration and restart fppd?\n\nThe current configuration is backed up first. Changes waiting on this page are dropped.')) return;
         try {
@@ -1003,7 +1042,12 @@
         else {
             h += pill('blue', d.length + ' change' + (d.length === 1 ? '' : 's') + ' waiting') + '<span class="wltm-cap wltm-difflist">' + d.slice(0, 6).map(function (x) { return '<b>' + esc(x.label) + ':</b> ' + esc(x.text); }).join(' &nbsp;·&nbsp; ') + (d.length > 6 ? ' &nbsp;·&nbsp; and ' + (d.length - 6) + ' more' : '') + '</span><span class="wltm-grow"></span>' + btn('discard', 'Discard changes');
         }
-        h += btn('apply', 'Apply to FPP · backup + restart fppd', 'pri', d.length ? '' : ' disabled') + '</div>';
+        var pk = pageKind(), plan = pk ? pagePlan() : null;
+        if (plan && (plan.changes.length || plan.skipped.length)) {
+            h += btn('apply-page', 'Apply ' + C.PAGE_KINDS[pk] + ' only' + (plan.changes.length ? ' (' + plan.changes.length + ')' : ''), 'green', plan.changes.length ? '' : ' disabled');
+            if (plan.skipped.length) h += '<span class="wltm-cap" title="' + esc(plan.skipped.map(function (x) { return x.label + ': ' + x.why; }).join('\n')) + '">' + plan.skipped.length + ' left for the full Apply</span>';
+        }
+        h += btn('apply', (plan && plan.changes.length ? 'Apply everything' : 'Apply to FPP') + ' · backup + restart fppd', 'pri', d.length ? '' : ' disabled') + '</div>';
         return h;
     }
 
@@ -1157,6 +1201,7 @@
             case 'restore': restoreBackup(t.getAttribute('data-name')); break;
             case 'discard': discardStaged(); break;
             case 'apply': applyToFpp(); break;
+            case 'apply-page': applyPage(); break;
         }
     }
 

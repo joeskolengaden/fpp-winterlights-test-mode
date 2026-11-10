@@ -706,6 +706,64 @@ test('identify: the chase runs a lit block from the first pixel to the last, in 
     await tab('ports');
 });
 
+test('apply from one page: colour order only, then names only; the rest keeps waiting', async () => {
+    // start from a known state: FPP's file is the fixture and nothing is staged
+    fs.writeFileSync(cfgFile(), JSON.stringify(fixture(), null, 2));
+    fs.rmSync(path.join(dataDir(), 'record.json'), { force: true });
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    const disk = () => JSON.parse(fs.readFileSync(cfgFile(), 'utf8')).channelOutputs[0].outputs;
+    // stage: a rename (Roof left), a colour order (Roof right RGB -> GRB) and a 3 -> 4 channel colour order (Window 1 RGB -> RGBW)
+    await page.evaluate(() => {
+        const o = window.WLTMUI._state.record.draft[0].outputs;
+        o[0].virtualStrings[0].description = 'Eave';
+        o[1].virtualStrings[0].colorOrder = 'GRB';
+        o[2].virtualStrings[0].colorOrder = 'RGBW';
+    });
+    await tab('colour');
+    assert.match(await text('#wltm .wltm-foot'), /3 changes waiting/);
+    assert.match(await text('#wltm [data-act="apply-page"]'), /Apply colour order only \(1\)/);
+    assert.match(await text('#wltm .wltm-foot'), /1 left for the full Apply/);
+    await shot('07-apply-page');
+    const before = fs.readFileSync(cfgFile(), 'utf8');
+    await act('apply-page');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    let o = disk();
+    assert.equal(o[1].virtualStrings[0].colorOrder, 'GRB', 'the colour order was written');
+    assert.equal(o[0].virtualStrings[0].description, 'Roof left', 'the rename was not');
+    assert.equal(o[2].virtualStrings[0].colorOrder, 'RGB', 'the 3 -> 4 channel change was not');
+    const afterObj = JSON.parse(fs.readFileSync(cfgFile(), 'utf8')), beforeObj = JSON.parse(before);
+    afterObj.channelOutputs[0].outputs[1].virtualStrings[0].colorOrder = 'RGB';
+    assert.deepEqual(afterObj, beforeObj, 'nothing else in FPP\'s file changed');
+    assert.ok(requests().slice(-3).includes('restart'), 'fppd was restarted');
+    assert.match(await text('#wltm .wltm-foot'), /2 changes waiting/, 'the other two are still waiting');
+    // names only, from the Ports page
+    await tab('ports');
+    assert.match(await text('#wltm [data-act="apply-page"]'), /Apply names only \(1\)/);
+    await act('apply-page');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    o = disk();
+    assert.equal(o[0].virtualStrings[0].description, 'Eave');
+    assert.equal(o[1].virtualStrings[0].colorOrder, 'GRB');
+    assert.equal(o[2].virtualStrings[0].colorOrder, 'RGB', 'still waiting');
+    assert.match(await text('#wltm .wltm-foot'), /1 change waiting/);
+    // a reload keeps the one that is still waiting, and does not report FPP's file as changed outside the page
+    await page.goto(url());
+    await page.waitForSelector('#wltm .wltm-table');
+    await settle();
+    assert.match(await text('#wltm .wltm-foot'), /1 change waiting/);
+    assert.doesNotMatch(await text('#wltm'), /was changed outside this page/);
+    // the full Apply still writes what is left
+    await act('apply');
+    await page.waitForFunction(() => !window.WLTMUI._state.busy, null, { timeout: 120000 });
+    await settle();
+    assert.equal(disk()[2].virtualStrings[0].colorOrder, 'RGBW');
+    assert.match(await text('#wltm .wltm-foot'), /Nothing waiting/);
+});
+
 test('backend refuses bad requests and leaves FPP\'s file alone', async () => {
     const api = (a) => 'http://127.0.0.1:' + port + '/plugin.php?plugin=' + PLUGIN + '&page=wltm-api.php&nopage=1&action=' + a;
     const before = fs.readFileSync(cfgFile(), 'utf8');

@@ -331,6 +331,49 @@
         return out;
     }
 
+    /*
+     * Apply only what one page is about. Returns FPP's current config with just those fields copied over from the draft,
+     * for strings where that is a plain edit. Everything else the draft holds stays waiting.
+     *   kind 'colour': colour order        kind 'count': pixel count (and what counting changes with it) and the description note
+     *   kind 'names':  descriptions
+     * A string is left out ("skipped") when copying its fields alone would not match what the draft means: a string that is
+     * new, split off, or part of a split, or a colour order change between 3 and 4 channels per pixel (it moves the channels).
+     * { channelOutputs, changes: [{ key, label, text }], skipped: [{ label, why }] }
+     */
+    var PAGE_KINDS = { colour: 'colour order', count: 'pixel counts and notes', names: 'names' };
+    function pageConfig(draft, liveOutputs, kind) {
+        var out = clone(liveOutputs || []), lidx = liveIndex(out), orig = liveIndex(liveOutputs || []);
+        var changes = [], skipped = [], rows = listRows(draft);
+        var parts = {};
+        rows.forEach(function (r) { if (!r.empty && r.vs._live) parts[r.vs._live.key] = (parts[r.vs._live.key] || 0) + 1; });
+        rows.forEach(function (r) {
+            if (r.empty) return;
+            var vs = r.vs, lv = vs._live ? lidx[vs._live.key] : null, lo = vs._live ? orig[vs._live.key] : null;
+            if (!lv || !lo) return;
+            var wants = [];
+            if (kind === 'colour' && String(vs.colorOrder) !== String(lo.vs.colorOrder)) wants.push('colour');
+            if (kind === 'count') {
+                if (toInt(vs.pixelCount, 0) !== toInt(lo.vs.pixelCount, 0)) wants.push('count');
+                if (String(vs.description || '') !== String(lo.vs.description || '') && toInt(vs._live.off, 0) === 0) wants.push('note');
+            }
+            if (kind === 'names' && String(vs.description || '') !== String(lo.vs.description || '') && toInt(vs._live.off, 0) === 0) wants.push('name');
+            if (!wants.length) return;
+            var label = rowLabel(r);
+            if (toInt(vs._live.off, 0) > 0 || parts[vs._live.key] > 1) { skipped.push({ label: label, why: 'it is part of a split, which needs the full Apply' }); return; }
+            if (wants.indexOf('colour') >= 0 && orderInfo(vs.colorOrder).cpp !== orderInfo(lo.vs.colorOrder).cpp) { skipped.push({ label: label, why: 'its colour order changes the channels per pixel, which needs the full Apply' }); return; }
+            var txt = [];
+            if (wants.indexOf('colour') >= 0) { txt.push(lo.vs.colorOrder + ' \u2192 ' + vs.colorOrder); lv.vs.colorOrder = vs.colorOrder; }
+            if (wants.indexOf('count') >= 0) {
+                txt.push(lo.vs.pixelCount + ' \u2192 ' + vs.pixelCount + ' px');
+                lv.vs.pixelCount = vs.pixelCount;
+                ['startChannel', 'zigZag', 'groupCount'].forEach(function (k) { if (vs[k] !== undefined) lv.vs[k] = vs[k]; });
+            }
+            if (wants.indexOf('note') >= 0 || wants.indexOf('name') >= 0) { txt.push('description "' + (vs.description || '') + '"'); lv.vs.description = vs.description || ''; }
+            changes.push({ key: r.key, label: label, text: txt.join(', ') });
+        });
+        return { channelOutputs: out, changes: changes, skipped: skipped };
+    }
+
     function liveEmptyDesc(liveOutputs, r) {
         var p = liveOutputs && liveOutputs[r.co] && liveOutputs[r.co].outputs && liveOutputs[r.co].outputs[r.port];
         var list = p && Array.isArray(p[SUB_KEYS[r.sub]]) ? p[SUB_KEYS[r.sub]] : [];
@@ -771,7 +814,7 @@
         clone: clone, toInt: toInt, newUid: newUid,
         orderInfo: orderInfo, inputOffset: inputOffset, testColours: testColours, allowedOrders: allowedOrders, detectOrder: detectOrder,
         subportCount: subportCount, defaultVs: defaultVs, dataPixels: dataPixels, listRows: listRows, rowLabel: rowLabel,
-        makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft,
+        makeDraft: makeDraft, rebaseDraft: rebaseDraft, stripDraft: stripDraft, liveIndex: liveIndex, liveOf: liveOf, countLimit: countLimit, diffDraft: diffDraft, pageConfig: pageConfig, PAGE_KINDS: PAGE_KINDS,
         cleanDescription: cleanDescription, descBase: descBase, descNote: descNote, noteRoom: noteRoom, withNote: withNote, DEFAULT_TAGS: DEFAULT_TAGS, descStem: descStem, partLetter: partLetter, letterParts: letterParts, cleanTags: cleanTags, TAG_MAX_LEN: TAG_MAX_LEN, NOTE_SEP: NOTE_SEP, DESC_MAX: DESC_MAX, renameRow: renameRow, nextFreeChannel: nextFreeChannel, addString: addString,
         findByUid: findByUid, removeNewString: removeNewString, removeSubport: removeSubport, splitString: splitString, setPixelCount: setPixelCount, setColourOrder: setColourOrder,
         pixelChannel: pixelChannel, mergeRanges: mergeRanges, setString: setString, pixelRanges: pixelRanges,
