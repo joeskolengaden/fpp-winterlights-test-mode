@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The checkout folder is named after the repo (fpp-winterlights-test-mode); the page derives the plugin name from it.
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: shivammathur/setup-php@v2
